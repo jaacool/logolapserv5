@@ -235,10 +235,10 @@ export const Previewer: React.FC<PreviewerProps> = ({
                 </div>
                 {!isPlaying && (
                   <>
-                    <button onClick={handlePrev} className="absolute left-0 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Previous image">
+                    <button onClick={handlePrev} className="absolute -left-8 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Previous image">
                         <ChevronLeftIcon className="w-6 h-6" />
                     </button>
-                    <button onClick={handleNext} className="absolute right-0 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Next image">
+                    <button onClick={handleNext} className="absolute -right-8 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Next image">
                         <ChevronRightIcon className="w-6 h-6" />
                     </button>
                   </>
