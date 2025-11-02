@@ -273,21 +273,48 @@ export default function App() {
                 masterFile.imageElement, 
                 targetFile.imageElement, 
                 isGreedyMode, 
-                isRefinementEnabled,
+                true, // Enable refinement for better results
                 false, // No perspective correction
                 true, // Force simple match
                 false, 
                 aspectRatio
             );
-            setProcessedFiles(prev => prev.map(f => 
-                f.id === fileId ? { ...f, processedUrl, debugUrl } : f
-            ));
+            
+            // Apply ensemble correction if enabled and we have other processed files
+            if (isEnsembleCorrectionEnabled && processedFiles.length > 1) {
+                const masterResult = processedFiles.find(f => f.id === masterFileId);
+                if (masterResult) {
+                    try {
+                        const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
+                        const refinedUrl = await refineWithGoldenTemplate(processedUrl, goldenTemplateElement);
+                        setProcessedFiles(prev => prev.map(f => 
+                            f.id === fileId ? { ...f, processedUrl: refinedUrl, debugUrl } : f
+                        ));
+                    } catch (err) {
+                        console.error("Error during ensemble refinement for simple match:", err);
+                        // Fall back to simple match result without refinement
+                        setProcessedFiles(prev => prev.map(f => 
+                            f.id === fileId ? { ...f, processedUrl, debugUrl } : f
+                        ));
+                    }
+                } else {
+                    // No master result found, use simple match result
+                    setProcessedFiles(prev => prev.map(f => 
+                        f.id === fileId ? { ...f, processedUrl, debugUrl } : f
+                    ));
+                }
+            } else {
+                // No ensemble correction, use simple match result directly
+                setProcessedFiles(prev => prev.map(f => 
+                    f.id === fileId ? { ...f, processedUrl, debugUrl } : f
+                ));
+            }
         } catch (err) {
             setError(getFriendlyErrorMessage(err, targetFile.file.name));
         } finally {
             setFixingImageId(null);
         }
-    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, aspectRatio]);
+    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
