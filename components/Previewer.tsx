@@ -183,7 +183,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
                 {isPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
               </button>
             </div>
-            <DebugToggle isChecked={isDebugMode} onChange={onSetDebugMode} />
+            {/* <DebugToggle isChecked={isDebugMode} onChange={onSetDebugMode} /> */}
         </div>
       </div>
 
