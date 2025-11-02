@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { ProcessedFile, UploadedFile, AspectRatio } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, GridIcon, SingleViewIcon, PlayIcon, PauseIcon, XIcon, PerspectiveIcon, DownloadIcon } from './Icons';
+import { ChevronLeftIcon, ChevronRightIcon, GridIcon, SingleViewIcon, PlayIcon, PauseIcon, XIcon, PerspectiveIcon, SimpleMatchIcon, DownloadIcon } from './Icons';
 import { DebugToggle } from './DebugToggle';
 import { Spinner } from './Spinner';
 
@@ -14,6 +14,7 @@ interface PreviewerProps {
   aspectRatio: AspectRatio;
   onDelete: (id: string) => void;
   onPerspectiveFix: (id: string) => void;
+  onSimpleMatchFix: (id: string) => void;
   fixingImageId: string | null;
   onExport: () => void;
   isExporting: boolean;
@@ -29,6 +30,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
     aspectRatio,
     onDelete,
     onPerspectiveFix,
+    onSimpleMatchFix,
     fixingImageId,
     onExport,
     isExporting
@@ -284,14 +286,24 @@ export const Previewer: React.FC<PreviewerProps> = ({
                     <XIcon className="w-4 h-4" />
                 </button>
                 {!isMaster && (
-                    <button
-                        onClick={() => onPerspectiveFix(file.id)}
-                        disabled={!!fixingImageId}
-                        className="absolute bottom-1 left-1 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-blue-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Re-run with Perspective Fix"
-                    >
-                        <PerspectiveIcon className="w-5 h-5" />
-                    </button>
+                    <>
+                        <button
+                            onClick={() => onPerspectiveFix(file.id)}
+                            disabled={!!fixingImageId}
+                            className="absolute bottom-1 left-1 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-blue-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Re-run with Perspective Fix"
+                        >
+                            <PerspectiveIcon className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={() => onSimpleMatchFix(file.id)}
+                            disabled={!!fixingImageId}
+                            className="absolute bottom-1 left-12 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-green-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Re-run with Simple Match (Rotation/Scale Only)"
+                        >
+                            <SimpleMatchIcon className="w-5 h-5" />
+                        </button>
+                    </>
                 )}
                 <img src={imageUrl} alt={file.originalName} className="w-full h-full object-contain bg-gray-800" />
                 

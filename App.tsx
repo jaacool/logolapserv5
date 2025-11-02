@@ -256,6 +256,40 @@ export default function App() {
         }
     }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio]);
 
+    const handleSimpleMatchFix = useCallback(async (fileId: string) => {
+        const targetFile = uploadedFiles.find(f => f.id === fileId);
+        const alignedMasterResult = processedFiles.find(f => f.id === masterFileId);
+
+        if (!targetFile || !alignedMasterResult) {
+            setError(`Could not find necessary files to fix simple match for ${fileId}.`);
+            return;
+        }
+
+        setFixingImageId(fileId);
+        setError(null);
+
+        try {
+            const perspectiveMasterElement = await dataUrlToImageElement(alignedMasterResult.processedUrl);
+            const { processedUrl, debugUrl } = await processImageLocally(
+                perspectiveMasterElement, 
+                targetFile.imageElement, 
+                isGreedyMode, 
+                isRefinementEnabled,
+                false, // No perspective correction
+                true, // Force simple match
+                false, 
+                aspectRatio
+            );
+            setProcessedFiles(prev => prev.map(f => 
+                f.id === fileId ? { ...f, processedUrl, debugUrl } : f
+            ));
+        } catch (err) {
+            setError(getFriendlyErrorMessage(err, targetFile.file.name));
+        } finally {
+            setFixingImageId(null);
+        }
+    }, [uploadedFiles, processedFiles, masterFileId, isGreedyMode, isRefinementEnabled, aspectRatio]);
+
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
         setIsExporting(true);
@@ -548,6 +582,7 @@ export default function App() {
                 aspectRatio={aspectRatio}
                 onDelete={handleDeleteProcessedFile}
                 onPerspectiveFix={handleFixPerspective}
+                onSimpleMatchFix={handleSimpleMatchFix}
                 fixingImageId={fixingImageId}
                 onExport={handleExport}
                 isExporting={isExporting}
