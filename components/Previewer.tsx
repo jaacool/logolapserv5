@@ -136,7 +136,11 @@ export const Previewer: React.FC<PreviewerProps> = ({
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-center">
       <div className="w-full flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 p-2 bg-gray-800/50 rounded-lg">
-        <div className="flex items-center gap-4 flex-wrap justify-start">
+        <div className="flex items-center gap-4 flex-wrap">
+            <div className="text-left">
+                <h2 className="text-xl font-semibold">Processing Complete</h2>
+                <p className="text-sm text-gray-400">Review the final aligned results below.</p>
+            </div>
              <button 
                 onClick={onBackToSelection}
                 className="px-3 py-2 text-sm font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-500 transition-colors flex items-center gap-2"
@@ -145,6 +149,8 @@ export const Previewer: React.FC<PreviewerProps> = ({
                 <ChevronLeftIcon className="w-5 h-5" />
                 <span>Change Selection</span>
             </button>
+        </div>
+        <div className="flex items-center gap-4 flex-wrap justify-end">
             <button
                 onClick={onExport}
                 disabled={isExporting}
@@ -178,10 +184,6 @@ export const Previewer: React.FC<PreviewerProps> = ({
               </button>
             </div>
             <DebugToggle isChecked={isDebugMode} onChange={onSetDebugMode} />
-        </div>
-        <div className="text-center sm:text-right">
-            <h2 className="text-xl font-semibold">Processing Complete</h2>
-            <p className="text-sm text-gray-400">Review the final aligned results below.</p>
         </div>
       </div>
 
