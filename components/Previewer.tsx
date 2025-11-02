@@ -33,9 +33,9 @@ export const Previewer: React.FC<PreviewerProps> = ({
     onExport,
     isExporting
 }) => {
-  const [viewMode, setViewMode] = useState<'grid' | 'single'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'single'>('single');
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
 
   useEffect(() => {
     if (files.length > 0) {
