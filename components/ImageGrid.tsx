@@ -1,20 +1,26 @@
 import React from 'react';
 import type { UploadedFile } from '../types';
-import { PerspectiveIcon, XIcon } from './Icons';
+import { PerspectiveIcon, SimpleMatchIcon, XIcon } from './Icons';
 
 interface ImageGridProps {
   files: UploadedFile[];
   masterFileId: string | null;
   onSelectMaster: (id: string) => void;
   onTogglePerspective: (id: string) => void;
+  onToggleSimpleMatch: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
-export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSelectMaster, onTogglePerspective, onDelete }) => {
+export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSelectMaster, onTogglePerspective, onToggleSimpleMatch, onDelete }) => {
   
   const handlePerspectiveClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // Prevent master selection when clicking the icon
     onTogglePerspective(id);
+  }
+
+  const handleSimpleMatchClick = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevent master selection when clicking the icon
+    onToggleSimpleMatch(id);
   }
 
   const handleDeleteClick = (e: React.MouseEvent, id: string) => {
@@ -25,11 +31,12 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
   return (
     <div className="w-full">
       <p className="text-center text-lg text-gray-300 mb-2">1. Select the master image to align others against.</p>
-      <p className="text-center text-sm text-gray-400 mb-4">2. Click the <PerspectiveIcon className="w-4 h-4 inline-block -mt-1"/> icon on images needing perspective correction.</p>
+      <p className="text-center text-sm text-gray-400 mb-4">2. Click the <PerspectiveIcon className="w-4 h-4 inline-block -mt-1"/> icon for perspective correction or <SimpleMatchIcon className="w-4 h-4 inline-block -mt-1"/> for simple match (rotation/scale only).</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
         {files.map((file) => {
           const isMaster = file.id === masterFileId;
           const needsPerspective = file.needsPerspectiveCorrection;
+          const needsSimpleMatch = file.needsSimpleMatch;
 
           return (
             <div
@@ -37,7 +44,8 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
               onClick={() => onSelectMaster(file.id)}
               className={`relative rounded-lg overflow-hidden cursor-pointer group transition-all duration-200 transform hover:scale-105 aspect-square
                 ${isMaster ? 'ring-4 ring-cyan-400 shadow-2xl shadow-cyan-500/30' : 'ring-2 ring-gray-700 hover:ring-cyan-500'}
-                ${needsPerspective && !isMaster ? 'ring-offset-2 ring-offset-gray-900 ring-2 ring-blue-500' : ''}`}
+                ${needsPerspective && !isMaster ? 'ring-offset-2 ring-offset-gray-900 ring-2 ring-blue-500' : ''}
+                ${needsSimpleMatch && !isMaster ? 'ring-offset-2 ring-offset-gray-900 ring-2 ring-green-500' : ''}`}
             >
               <img src={file.previewUrl} alt={file.file.name} className="w-full h-full object-contain bg-gray-800" />
               
@@ -63,6 +71,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
               )}
 
               {!isMaster && (
+                <>
                  <button
                     onClick={(e) => handlePerspectiveClick(e, file.id)}
                     className={`absolute bottom-1 right-1 p-1.5 rounded-full transition-colors duration-200
@@ -71,6 +80,15 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
                   >
                     <PerspectiveIcon className="w-5 h-5" />
                   </button>
+                  <button
+                    onClick={(e) => handleSimpleMatchClick(e, file.id)}
+                    className={`absolute bottom-1 left-1 p-1.5 rounded-full transition-colors duration-200
+                      ${needsSimpleMatch ? 'bg-green-500 text-white' : 'bg-black/50 text-gray-300 hover:bg-green-600 hover:text-white'}`}
+                    title="Toggle Simple Match (Rotation/Scale Only)"
+                  >
+                    <SimpleMatchIcon className="w-5 h-5" />
+                  </button>
+                </>
               )}
             </div>
           );

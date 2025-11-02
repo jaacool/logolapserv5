@@ -6,6 +6,7 @@ export interface UploadedFile {
   previewUrl: string;
   imageElement: HTMLImageElement;
   needsPerspectiveCorrection?: boolean;
+  needsSimpleMatch?: boolean;
 }
 
 export interface ProcessedFile {

@@ -140,6 +140,7 @@ export default function App() {
             previewUrl: imageElement.src,
             imageElement: imageElement,
             needsPerspectiveCorrection: false,
+            needsSimpleMatch: false,
           };
         })
     );
@@ -152,6 +153,16 @@ export default function App() {
         file.id === fileId 
           ? { ...file, needsPerspectiveCorrection: !file.needsPerspectiveCorrection } 
           : file.id === masterFileId && file.id === fileId ? { ...file, needsPerspectiveCorrection: false } : file
+      )
+    );
+  }, [masterFileId]);
+
+  const handleToggleSimpleMatch = useCallback((fileId: string) => {
+    setUploadedFiles(prevFiles => 
+      prevFiles.map(file => 
+        file.id === fileId 
+          ? { ...file, needsSimpleMatch: !file.needsSimpleMatch } 
+          : file.id === masterFileId && file.id === fileId ? { ...file, needsSimpleMatch: false } : file
       )
     );
   }, [masterFileId]);
@@ -315,9 +326,10 @@ export default function App() {
                 return;
             }
 
-            const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection);
+            const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection && !f.needsSimpleMatch && f.id !== masterFileId);
+            const simpleMatchFiles = uploadedFiles.filter(f => f.needsSimpleMatch && f.id !== masterFileId);
             const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
-            const totalAlignmentFiles = standardFiles.length + perspectiveFiles.length;
+            const totalAlignmentFiles = standardFiles.length + simpleMatchFiles.length + perspectiveFiles.length;
             const totalSteps = totalAlignmentFiles + (isAiVariationsEnabled ? numVariations : 0);
             let stepsCompleted = 0;
 
@@ -348,16 +360,42 @@ export default function App() {
             }
             currentStage++;
 
+            // Process Simple Match files
             let stage2Results = stage1Results;
-            if (isEnsembleCorrectionEnabled && stage1Results.length > 1) {
+            if (simpleMatchFiles.length > 0) {
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Processing simple match images...`);
+                await yieldToMain();
+                
+                let simpleMatchResults: ProcessedFile[] = [];
+                for (const targetFile of simpleMatchFiles) {
+                    try {
+                        const { processedUrl, debugUrl } = await processImageLocally(
+                            masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
+                            false, true, targetFile.id === masterFileId, aspectRatio
+                        );
+                        simpleMatchResults.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
+                        setProcessedFiles([...stage1Results, ...simpleMatchResults]);
+                    } catch (err) {
+                        console.error("Error processing simple match file:", targetFile.file.name, err);
+                        setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
+                    }
+                    stepsCompleted++;
+                    setProcessingProgress((stepsCompleted / totalSteps) * 100);
+                    await yieldToMain();
+                }
+                stage2Results = [...stage1Results, ...simpleMatchResults];
+            }
+            currentStage++;
+
+            if (isEnsembleCorrectionEnabled && stage2Results.length > 1) {
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying ensemble correction...`);
                 await yieldToMain();
 
-                const masterResult = stage1Results.find(f => f.id === masterFileId);
+                const masterResult = stage2Results.find(f => f.id === masterFileId);
                 if (masterResult) {
                     const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
                     let refinedResults: ProcessedFile[] = [];
-                    for (const file of stage1Results) {
+                    for (const file of stage2Results) {
                         if (file.id !== masterFileId) {
                             try {
                                 const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement);
@@ -526,6 +564,7 @@ export default function App() {
                     masterFileId={masterFileId} 
                     onSelectMaster={setMasterFileId} 
                     onTogglePerspective={handleTogglePerspective}
+                    onToggleSimpleMatch={handleToggleSimpleMatch}
                     onDelete={handleDeleteUploadedFile}
                 />
             )}
