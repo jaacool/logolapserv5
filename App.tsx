@@ -240,6 +240,18 @@ export default function App() {
     setError(null);
   }, []);
 
+  const handleStartAllOver = useCallback(() => {
+    setUploadedFiles([]);
+    setMasterFileId(null);
+    setProcessedFiles([]);
+    setProcessingStatus('');
+    setError(null);
+    setProcessingProgress(0);
+    setIsProcessing(false);
+    setIsExporting(false);
+    setPreviousFileStates(new Map());
+  }, []);
+
   const handleDeleteUploadedFile = useCallback((idToDelete: string) => {
     setUploadedFiles(prev => {
         const fileToDelete = prev.find(f => f.id === idToDelete);
@@ -611,7 +623,14 @@ export default function App() {
               <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
             </div>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={handleStartAllOver}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
+              title="Start all over - reset everything"
+            >
+              Start All Over
+            </button>
             <span className="text-xs text-gray-500 font-medium">v5.2</span>
           </div>
         </div>
