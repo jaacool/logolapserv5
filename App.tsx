@@ -151,8 +151,8 @@ export default function App() {
     setUploadedFiles(prevFiles => 
       prevFiles.map(file => 
         file.id === fileId 
-          ? { ...file, needsPerspectiveCorrection: !file.needsPerspectiveCorrection } 
-          : file.id === masterFileId && file.id === fileId ? { ...file, needsPerspectiveCorrection: false } : file
+          ? { ...file, needsPerspectiveCorrection: !file.needsPerspectiveCorrection, needsSimpleMatch: false } 
+          : file.id === masterFileId && file.id === fileId ? { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false } : file
       )
     );
   }, [masterFileId]);
@@ -161,8 +161,8 @@ export default function App() {
     setUploadedFiles(prevFiles => 
       prevFiles.map(file => 
         file.id === fileId 
-          ? { ...file, needsSimpleMatch: !file.needsSimpleMatch } 
-          : file.id === masterFileId && file.id === fileId ? { ...file, needsSimpleMatch: false } : file
+          ? { ...file, needsSimpleMatch: !file.needsSimpleMatch, needsPerspectiveCorrection: false } 
+          : file.id === masterFileId && file.id === fileId ? { ...file, needsSimpleMatch: false, needsPerspectiveCorrection: false } : file
       )
     );
   }, [masterFileId]);
