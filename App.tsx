@@ -455,7 +455,7 @@ export default function App() {
       <header className="w-full max-w-7xl mx-auto flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
           <LogoIcon className="w-10 h-10 text-cyan-400" />
-          <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser v5.1</h1>
         </div>
         <a href="https://jaacool.media" target="_blank" rel="noopener noreferrer" className="opacity-70 hover:opacity-100 transition-opacity">
             <JaaCoolMediaLogo className="h-8"/>
