@@ -458,7 +458,7 @@ export default function App() {
         </div>
         <div className="w-full flex justify-between items-center">
           <div className="flex flex-col items-start gap-1">
-            <JaaCoolMediaLogo className="h-4" />
+            <JaaCoolMediaLogo className="h-7" />
             <div className="flex items-center gap-4">
               <LogoIcon className="w-10 h-10 text-cyan-400" />
               <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
