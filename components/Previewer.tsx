@@ -136,11 +136,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-center">
       <div className="w-full flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 p-2 bg-gray-800/50 rounded-lg">
-        <div className="text-center sm:text-left">
-            <h2 className="text-xl font-semibold">Processing Complete</h2>
-            <p className="text-sm text-gray-400">Review the final aligned results below.</p>
-        </div>
-        <div className="flex items-center gap-4 flex-wrap justify-center">
+        <div className="flex items-center gap-4 flex-wrap justify-start">
              <button 
                 onClick={onBackToSelection}
                 className="px-3 py-2 text-sm font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-500 transition-colors flex items-center gap-2"
@@ -182,6 +178,10 @@ export const Previewer: React.FC<PreviewerProps> = ({
               </button>
             </div>
             <DebugToggle isChecked={isDebugMode} onChange={onSetDebugMode} />
+        </div>
+        <div className="text-center sm:text-right">
+            <h2 className="text-xl font-semibold">Processing Complete</h2>
+            <p className="text-sm text-gray-400">Review the final aligned results below.</p>
         </div>
       </div>
 
@@ -233,10 +233,10 @@ export const Previewer: React.FC<PreviewerProps> = ({
                 </div>
                 {!isPlaying && (
                   <>
-                    <button onClick={handlePrev} className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Previous image">
+                    <button onClick={handlePrev} className="absolute left-0 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Previous image">
                         <ChevronLeftIcon className="w-6 h-6" />
                     </button>
-                    <button onClick={handleNext} className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Next image">
+                    <button onClick={handleNext} className="absolute right-0 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Next image">
                         <ChevronRightIcon className="w-6 h-6" />
                     </button>
                   </>
