@@ -453,16 +453,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
       <header className="w-full max-w-7xl mx-auto flex flex-col items-center mb-6">
-        <a href="https://jaacool.media" target="_blank" rel="noopener noreferrer" className="opacity-70 hover:opacity-100 transition-opacity mb-2">
-            <JaaCoolMediaLogo className="h-4"/>
-        </a>
         <div className="text-center mb-2">
           <span className="text-xs text-gray-500 font-medium">v5.2</span>
         </div>
         <div className="w-full flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <LogoIcon className="w-10 h-10 text-cyan-400" />
-            <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
+          <div className="flex flex-col items-start gap-1">
+            <JaaCoolMediaLogo className="h-4" />
+            <div className="flex items-center gap-4">
+              <LogoIcon className="w-10 h-10 text-cyan-400" />
+              <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
+            </div>
           </div>
         </div>
       </header>
