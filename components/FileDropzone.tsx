@@ -1,5 +1,5 @@
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { UploadIcon } from './Icons';
 
 interface FileDropzoneProps {
@@ -33,6 +33,51 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({ onDrop }) => {
       onDrop(Array.from(e.target.files));
     }
   };
+
+  // Enable dropping files anywhere on the window
+  useEffect(() => {
+    const onWindowDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(true);
+    };
+    const onWindowDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(true);
+    };
+    const onWindowDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(false);
+    };
+    const onWindowDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(false);
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        onDrop(Array.from(files));
+      }
+    };
+
+    window.addEventListener('dragover', onWindowDragOver);
+    window.addEventListener('dragenter', onWindowDragEnter);
+    window.addEventListener('dragleave', onWindowDragLeave);
+    window.addEventListener('drop', onWindowDrop);
+    // Prevent default on document as well to avoid browser opening the file
+    document.addEventListener('dragover', onWindowDragOver);
+    document.addEventListener('drop', onWindowDrop);
+
+    return () => {
+      window.removeEventListener('dragover', onWindowDragOver);
+      window.removeEventListener('dragenter', onWindowDragEnter);
+      window.removeEventListener('dragleave', onWindowDragLeave);
+      window.removeEventListener('drop', onWindowDrop);
+      document.removeEventListener('dragover', onWindowDragOver);
+      document.removeEventListener('drop', onWindowDrop);
+    };
+  }, [onDrop]);
 
   return (
     <div
