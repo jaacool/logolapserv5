@@ -13,6 +13,7 @@ import { GreedyModeToggle } from './components/GreedyModeToggle';
 import { RefinementToggle } from './components/RefinementToggle';
 import { EnsembleCorrectionToggle } from './components/EnsembleCorrectionToggle';
 import { PerspectiveCorrectionToggle } from './components/PerspectiveCorrectionToggle';
+import { SimpleMatchToggle } from './components/SimpleMatchToggle';
 import { AspectRatioSelector } from './components/AspectRatioSelector';
 import { AIVariationsToggle } from './components/AIVariationsToggle';
 import { VariationSelector } from './components/VariationSelector';
@@ -66,6 +67,7 @@ export default function App() {
   const [isRefinementEnabled, setIsRefinementEnabled] = useState(true);
   const [isEnsembleCorrectionEnabled, setIsEnsembleCorrectionEnabled] = useState(true);
   const [isAiVariationsEnabled, setIsAiVariationsEnabled] = useState(false);
+  const [isSimpleMatchEnabled, setIsSimpleMatchEnabled] = useState(false);
   const [numVariations, setNumVariations] = useState<number>(1);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [fixingImageId, setFixingImageId] = useState<string | null>(null);
@@ -229,6 +231,7 @@ export default function App() {
                 isGreedyMode, 
                 isRefinementEnabled,
                 true, // Force perspective correction
+                false, // Simple match disabled for perspective correction
                 false, 
                 aspectRatio
             );
@@ -331,7 +334,7 @@ export default function App() {
                 try {
                     const { processedUrl, debugUrl } = await processImageLocally(
                         masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                        false, targetFile.id === masterFileId, aspectRatio
+                        false, isSimpleMatchEnabled, targetFile.id === masterFileId, aspectRatio
                     );
                     stage1Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
                     setProcessedFiles([...stage1Results]);
@@ -385,7 +388,7 @@ export default function App() {
                          try {
                             const { processedUrl, debugUrl } = await processImageLocally(
                                 perspectiveMasterElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                                true, false, aspectRatio
+                                true, false, false, aspectRatio
                             );
                             stage3Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
                             setProcessedFiles([...stage3Results]);
@@ -422,7 +425,7 @@ export default function App() {
                             const masterElementForAI = await dataUrlToImageElement(masterResult.processedUrl);
                             const { processedUrl, debugUrl } = await processImageLocally(
                                 masterElementForAI, variationImageElement, true, true,
-                                false, false, aspectRatio
+                                false, false, false, aspectRatio
                             );
                             const variationId = `ai-var-${Date.now()}-${i}`;
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });
@@ -453,16 +456,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
       <header className="w-full max-w-7xl mx-auto flex flex-col items-center mb-6">
-        <div className="text-center mb-2">
-          <span className="text-xs text-gray-500 font-medium">v5.2</span>
-        </div>
-        <div className="w-full flex justify-between items-center">
+        <div className="w-full flex items-center">
           <div className="flex flex-col items-start gap-1">
             <JaaCoolMediaLogo className="h-7" />
             <div className="flex items-center gap-4">
               <LogoIcon className="w-10 h-10 text-cyan-400" />
               <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
             </div>
+          </div>
+          <div className="ml-auto">
+            <span className="text-xs text-gray-500 font-medium">v5.2</span>
           </div>
         </div>
       </header>
@@ -540,6 +543,10 @@ export default function App() {
                          <PerspectiveCorrectionToggle 
                             isChecked={allNonMasterFilesNeedPerspective} 
                             onChange={handleToggleAllPerspective} 
+                         />
+                         <SimpleMatchToggle 
+                            isChecked={isSimpleMatchEnabled} 
+                            onChange={setIsSimpleMatchEnabled} 
                          />
                     </div>
 

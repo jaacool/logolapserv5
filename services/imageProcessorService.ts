@@ -22,6 +22,115 @@ interface ProcessResult {
     debugUrl: string;
 }
 
+// Simple Match Algorithm - only rotation, position and uniform scaling (no perspective distortion)
+const performSimpleAlignment = (
+    baseMat: any,
+    targetMat: any,
+    isGreedy: boolean,
+    useRefinement: boolean,
+) => {
+    const mats: any[] = [];
+    let akaze: any;
+    let clahe: any;
+    
+    const keypointsBase = new cv.KeyPointVector();
+    const keypointsTarget = new cv.KeyPointVector();
+    
+    try {
+        const MIN_MATCH_COUNT = isGreedy ? 4 : 10;
+        const RATIO_TEST_THRESHOLD = isGreedy ? 0.85 : 0.75;
+    
+        const baseGray = new cv.Mat(); mats.push(baseGray);
+        const targetGray = new cv.Mat(); mats.push(targetGray);
+        cv.cvtColor(baseMat, baseGray, cv.COLOR_RGBA2GRAY);
+        cv.cvtColor(targetMat, targetGray, cv.COLOR_RGBA2GRAY);
+
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        clahe.apply(baseGray, baseGray);
+        clahe.apply(targetGray, targetGray);
+
+        akaze = new cv.AKAZE();
+        const descriptorsBase = new cv.Mat(); mats.push(descriptorsBase);
+        const descriptorsTarget = new cv.Mat(); mats.push(descriptorsTarget);
+        akaze.detectAndCompute(baseGray, new cv.Mat(), keypointsBase, descriptorsBase);
+        akaze.detectAndCompute(targetGray, new cv.Mat(), keypointsTarget, descriptorsTarget);
+
+        if (descriptorsBase.empty() || descriptorsTarget.empty()) {
+            throw new Error("Could not extract features from one or both images.");
+        }
+
+        const bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
+        const matches = new cv.DMatchVectorVector(); mats.push(matches);
+        bf.knnMatch(descriptorsTarget, descriptorsBase, matches, 2);
+
+        const goodMatches = [];
+        for (let i = 0; i < matches.size(); ++i) {
+            const match = matches.get(i);
+            if (match.size() > 1) {
+               if (match.get(0).distance < RATIO_TEST_THRESHOLD * match.get(1).distance) {
+                  goodMatches.push(match.get(0));
+               }
+            }
+        }
+
+        if (goodMatches.length < MIN_MATCH_COUNT) {
+            throw new Error(`Not enough good matches found (${goodMatches.length}/${MIN_MATCH_COUNT}).`);
+        }
+
+        const basePts = [], targetPts = [];
+        for(const match of goodMatches) {
+            targetPts.push(keypointsTarget.get(match.queryIdx).pt.x);
+            targetPts.push(keypointsTarget.get(match.queryIdx).pt.y);
+            basePts.push(keypointsBase.get(match.trainIdx).pt.x);
+            basePts.push(keypointsBase.get(match.trainIdx).pt.y);
+        }
+        const matTargetPts = cv.matFromArray(targetPts.length / 2, 1, cv.CV_32FC2, targetPts); mats.push(matTargetPts);
+        const matBasePts = cv.matFromArray(basePts.length / 2, 1, cv.CV_32FC2, basePts); mats.push(matBasePts);
+
+        // Use only affine transformation (no perspective)
+        let transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC);
+        if (transformMatrix.empty()) {
+            throw new Error("Could not compute the simple affine transformation matrix.");
+        }
+
+        // Ensure uniform scaling by averaging scale factors
+        const a = transformMatrix.doubleAt(0, 0);
+        const b = transformMatrix.doubleAt(0, 1);
+        const d = transformMatrix.doubleAt(1, 0);
+        const e = transformMatrix.doubleAt(1, 1);
+        
+        // Calculate uniform scale as average of current scales
+        const scaleX = Math.sqrt(a * a + b * b);
+        const scaleY = Math.sqrt(d * d + e * e);
+        const uniformScale = (scaleX + scaleY) / 2;
+        
+        // Calculate rotation angle
+        const rotation = Math.atan2(b, a);
+        
+        // Create uniform scaling + rotation matrix
+        const cos_r = Math.cos(rotation);
+        const sin_r = Math.sin(rotation);
+        
+        const uniformTransformMatrix = cv.matFromArray(2, 3, cv.CV_64FC1, [
+            uniformScale * cos_r, -uniformScale * sin_r, transformMatrix.doubleAt(0, 2),
+            uniformScale * sin_r, uniformScale * cos_r, transformMatrix.doubleAt(1, 2)
+        ]);
+        mats.push(transformMatrix); // Clean up old matrix
+        transformMatrix = uniformTransformMatrix;
+
+        return { transformMatrix, keypointsBase, keypointsTarget, goodMatches };
+
+    } catch (e) {
+        if (keypointsBase && !keypointsBase.isDeleted()) keypointsBase.delete();
+        if (keypointsTarget && !keypointsTarget.isDeleted()) keypointsTarget.delete();
+        throw e;
+    } finally {
+         mats.forEach(mat => { if (mat && mat.delete && !mat.isDeleted()) mat.delete(); });
+         if (akaze && akaze.delete) akaze.delete();
+         if (clahe && clahe.delete) clahe.delete();
+    }
+};
+
 const performAlignment = (
     baseMat: any,
     targetMat: any,
@@ -267,6 +376,7 @@ export const processImageLocally = (
     isGreedyMode: boolean,
     isRefinementEnabled: boolean,
     isPerspectiveCorrectionEnabled: boolean,
+    isSimpleMatchEnabled: boolean,
     isMaster: boolean,
     aspectRatio: string
 ): Promise<ProcessResult> => {
@@ -299,13 +409,10 @@ export const processImageLocally = (
                 dummyCanvas.width = 1; dummyCanvas.height = 1;
                 debugUrl = dummyCanvas.toDataURL();
             } else {
-                 const alignResult = performAlignment(
-                    masterMat, 
-                    targetMat, 
-                    isGreedyMode, 
-                    isRefinementEnabled, 
-                    isPerspectiveCorrectionEnabled
-                );
+                // Choose algorithm based on simple match setting
+                const alignResult = isSimpleMatchEnabled
+                    ? performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled)
+                    : performAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, isPerspectiveCorrectionEnabled);
                  
                  transformMatrix = alignResult.transformMatrix;
                  mats.push(transformMatrix);
