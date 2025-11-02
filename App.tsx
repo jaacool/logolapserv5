@@ -258,9 +258,9 @@ export default function App() {
 
     const handleSimpleMatchFix = useCallback(async (fileId: string) => {
         const targetFile = uploadedFiles.find(f => f.id === fileId);
-        const alignedMasterResult = processedFiles.find(f => f.id === masterFileId);
+        const masterFile = uploadedFiles.find(f => f.id === masterFileId);
 
-        if (!targetFile || !alignedMasterResult) {
+        if (!targetFile || !masterFile) {
             setError(`Could not find necessary files to fix simple match for ${fileId}.`);
             return;
         }
@@ -269,9 +269,8 @@ export default function App() {
         setError(null);
 
         try {
-            const perspectiveMasterElement = await dataUrlToImageElement(alignedMasterResult.processedUrl);
             const { processedUrl, debugUrl } = await processImageLocally(
-                perspectiveMasterElement, 
+                masterFile.imageElement, 
                 targetFile.imageElement, 
                 isGreedyMode, 
                 isRefinementEnabled,
@@ -288,7 +287,7 @@ export default function App() {
         } finally {
             setFixingImageId(null);
         }
-    }, [uploadedFiles, processedFiles, masterFileId, isGreedyMode, isRefinementEnabled, aspectRatio]);
+    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, aspectRatio]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
