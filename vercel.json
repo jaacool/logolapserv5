@@ -5,5 +5,6 @@
   "framework": "vite",
   "env": {
     "GEMINI_API_KEY": "@gemini-api-key"
-  }
+  },
+  "comment": "Deploy hook setup complete"
 }
