@@ -326,7 +326,7 @@ export default function App() {
                 return;
             }
 
-            const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection && !f.needsSimpleMatch && f.id !== masterFileId);
+            const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection && !f.needsSimpleMatch);
             const simpleMatchFiles = uploadedFiles.filter(f => f.needsSimpleMatch && f.id !== masterFileId);
             const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
             const totalAlignmentFiles = standardFiles.length + simpleMatchFiles.length + perspectiveFiles.length;
