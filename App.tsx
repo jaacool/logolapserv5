@@ -55,6 +55,7 @@ const getFriendlyErrorMessage = (err: any, context: string) => {
 export default function App() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [masterFileId, setMasterFileId] = useState<string | null>(null);
+  const [previousFileStates, setPreviousFileStates] = useState<Map<string, { needsPerspectiveCorrection: boolean; needsSimpleMatch: boolean }>>(new Map());
   const [processedFiles, setProcessedFiles] = useState<ProcessedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -125,6 +126,36 @@ export default function App() {
   const handleSnippetSelectionChange = (updatedSelection: string[]) => {
       setSelectedSnippets(updatedSelection);
   };
+
+  const handleSelectMaster = useCallback((newMasterId: string) => {
+    const newPreviousStates = new Map(previousFileStates);
+    
+    setUploadedFiles(prevFiles => {
+      return prevFiles.map(file => {
+        if (file.id === newMasterId) {
+          // Neuen Master: Zustand speichern und deaktivieren
+          newPreviousStates.set(file.id, {
+            needsPerspectiveCorrection: file.needsPerspectiveCorrection || false,
+            needsSimpleMatch: file.needsSimpleMatch || false
+          });
+          return { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false };
+        }
+        
+        if (file.id === masterFileId) {
+          // Alter Master: Vorherigen Zustand wiederherstellen
+          const previousState = newPreviousStates.get(file.id);
+          if (previousState) {
+            return { ...file, ...previousState };
+          }
+        }
+        
+        return file;
+      });
+    });
+    
+    setPreviousFileStates(newPreviousStates);
+    setMasterFileId(newMasterId);
+  }, [masterFileId, previousFileStates]);
 
 
   const handleFilesDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -641,7 +672,7 @@ export default function App() {
                 <ImageGrid 
                     files={uploadedFiles} 
                     masterFileId={masterFileId} 
-                    onSelectMaster={setMasterFileId} 
+                    onSelectMaster={handleSelectMaster} 
                     onTogglePerspective={handleTogglePerspective}
                     onToggleSimpleMatch={handleToggleSimpleMatch}
                     onDelete={handleDeleteUploadedFile}
