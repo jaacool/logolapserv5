@@ -6,7 +6,7 @@ import { processImageLocally, refineWithGoldenTemplate } from './services/imageP
 import { generateVariation } from './services/geminiService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
-import { JaaCoolMediaLogo, LogoIcon, XIcon } from './components/Icons';
+import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon } from './components/Icons';
 import { Spinner } from './components/Spinner';
 import { DebugToggle } from './components/DebugToggle';
 import { GreedyModeToggle } from './components/GreedyModeToggle';
@@ -139,7 +139,7 @@ export default function App() {
             file,
             previewUrl: imageElement.src,
             imageElement: imageElement,
-            needsPerspectiveCorrection: false,
+            needsPerspectiveCorrection: true,
             needsSimpleMatch: false,
           };
         })
@@ -152,20 +152,20 @@ export default function App() {
       prevFiles.map(file => 
         file.id === fileId 
           ? { ...file, needsPerspectiveCorrection: !file.needsPerspectiveCorrection, needsSimpleMatch: false } 
-          : file.id === masterFileId && file.id === fileId ? { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false } : file
+          : file
       )
     );
-  }, [masterFileId]);
+  }, []);
 
   const handleToggleSimpleMatch = useCallback((fileId: string) => {
     setUploadedFiles(prevFiles => 
       prevFiles.map(file => 
         file.id === fileId 
           ? { ...file, needsSimpleMatch: !file.needsSimpleMatch, needsPerspectiveCorrection: false } 
-          : file.id === masterFileId && file.id === fileId ? { ...file, needsSimpleMatch: false, needsPerspectiveCorrection: false } : file
+          : file
       )
     );
-  }, [masterFileId]);
+  }, []);
 
   const allNonMasterFilesNeedPerspective = useMemo(() => {
     const nonMasterFiles = uploadedFiles.filter(f => f.id !== masterFileId);
@@ -175,11 +175,29 @@ export default function App() {
     return nonMasterFiles.every(f => f.needsPerspectiveCorrection);
   }, [uploadedFiles, masterFileId]);
 
+  const allNonMasterFilesNeedSimpleMatch = useMemo(() => {
+    const nonMasterFiles = uploadedFiles.filter(f => f.id !== masterFileId);
+    if (nonMasterFiles.length === 0) {
+        return false;
+    }
+    return nonMasterFiles.every(f => f.needsSimpleMatch);
+  }, [uploadedFiles, masterFileId]);
+
   const handleToggleAllPerspective = useCallback((newValue: boolean) => {
       setUploadedFiles(prevFiles =>
           prevFiles.map(file =>
               file.id !== masterFileId
-                  ? { ...file, needsPerspectiveCorrection: newValue }
+                  ? { ...file, needsPerspectiveCorrection: newValue, needsSimpleMatch: false }
+                  : file
+          )
+      );
+  }, [masterFileId]);
+
+  const handleToggleAllSimpleMatch = useCallback((newValue: boolean) => {
+      setUploadedFiles(prevFiles =>
+          prevFiles.map(file =>
+              file.id !== masterFileId
+                  ? { ...file, needsSimpleMatch: newValue, needsPerspectiveCorrection: false }
                   : file
           )
       );
@@ -555,10 +573,10 @@ export default function App() {
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
       <header className="w-full max-w-7xl mx-auto flex flex-col items-center mb-6">
         <div className="w-full flex items-center">
-          <div className="flex flex-col items-start gap-1">
-            <JaaCoolMediaLogo className="h-7" />
-            <div className="flex items-center gap-4">
-              <LogoIcon className="w-10 h-10 text-cyan-400" />
+          <div className="flex items-center gap-4">
+            <SquaresExcludeIcon className="w-10 h-10 text-cyan-400" />
+            <div className="flex flex-col">
+              <JaaCoolMediaLogo className="h-7" />
               <h1 className="text-3xl font-bold text-white tracking-tight">Logo-Lapser</h1>
             </div>
           </div>
@@ -635,8 +653,8 @@ export default function App() {
                 <div className="w-full border-t border-gray-700 my-4"></div>
                 <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
                     
-                    <div className="flex flex-col items-center gap-4 p-4 bg-gray-800/50 rounded-lg h-full">
-                         <p className="text-center text-lg text-gray-300 mb-2">2. Configure alignment settings.</p>
+                    <div className="flex flex-col items-start gap-4 p-4 bg-gray-800/50 rounded-lg h-full">
+                         <p className="text-left text-lg text-gray-300 mb-2">2. Configure alignment settings.</p>
                          <GreedyModeToggle isChecked={isGreedyMode} onChange={setIsGreedyMode} />
                          <RefinementToggle isChecked={isRefinementEnabled} onChange={setIsRefinementEnabled} />
                          <EnsembleCorrectionToggle isChecked={isEnsembleCorrectionEnabled} onChange={setIsEnsembleCorrectionEnabled} />
@@ -645,8 +663,8 @@ export default function App() {
                             onChange={handleToggleAllPerspective} 
                          />
                          <SimpleMatchToggle 
-                            isChecked={isSimpleMatchEnabled} 
-                            onChange={setIsSimpleMatchEnabled} 
+                            isChecked={allNonMasterFilesNeedSimpleMatch} 
+                            onChange={handleToggleAllSimpleMatch} 
                          />
                     </div>
 

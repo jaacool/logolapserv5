@@ -1,5 +1,5 @@
 import React from 'react';
-import { WandIcon } from './Icons';
+import { RecycleIcon } from './Icons';
 import { Toggle, ToggleProps } from './Toggle';
 
 type RefinementToggleProps = Omit<ToggleProps, 'label' | 'icon' | 'id'>;
@@ -9,7 +9,7 @@ export const RefinementToggle: React.FC<RefinementToggleProps> = (props) => {
     <Toggle
       id="refinement-toggle"
       label="Iterative Refinement"
-      icon={<WandIcon className="w-5 h-5" />}
+      icon={<RecycleIcon className="w-5 h-5" />}
       {...props}
     />
   );
