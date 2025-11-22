@@ -34,7 +34,7 @@ export const generateVariation = async (
     const contents = { parts: [textPart, ...imageParts] };
 
     const response = await ai.models.generateContent({
-        model: 'gemini-3.0-pro-image-preview',
+        model: 'gemini-2.0-flash-exp',
         contents: contents,
         config: {
             responseModalities: [Modality.IMAGE],
