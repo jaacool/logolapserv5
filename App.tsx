@@ -65,6 +65,7 @@ export default function App() {
   const [processingStatus, setProcessingStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [elapsedTime, setElapsedTime] = useState(0); // Track actual elapsed time in seconds
   const [cvReady, setCvReady] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [isGreedyMode, setIsGreedyMode] = useState(false);
@@ -440,9 +441,17 @@ export default function App() {
         setError(null);
         setProcessedFiles([]);
         setProcessingProgress(0);
+        setElapsedTime(0);
         setProcessingStatus('Initializing processor...');
 
         const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
+
+        // Start real-time elapsed timer (updates every second)
+        const elapsedStartTime = performance.now();
+        const elapsedTimer = setInterval(() => {
+            const elapsed = Math.floor((performance.now() - elapsedStartTime) / 1000);
+            setElapsedTime(elapsed);
+        }, 1000);
 
         setTimeout(async () => {
             const masterFile = uploadedFiles.find(f => f.id === masterFileId);
@@ -669,7 +678,8 @@ export default function App() {
                 clearInterval(aiProgressInterval);
             }
 
-            // Snap to 100%
+            // Clear timers and snap to 100%
+            clearInterval(elapsedTimer);
             setProcessingProgress(100);
             
             setProcessedFiles(finalResults);
@@ -683,34 +693,28 @@ export default function App() {
         aspectRatio, selectedSnippets, apiKey, contextImageFile
     ]);
     
-    // Calculate estimated time based on remaining steps
+    // Calculate estimated time based on actual elapsed time
     const estimatedTimeRemaining = useMemo(() => {
         if (!isProcessing) return null;
         
-        // Heuristics (in seconds)
-        const TIME_PER_LOCAL_ALIGNMENT = 0.6; // 2x faster progress bar
+        // Realistic processing times (in seconds)
+        const TIME_PER_LOCAL_ALIGNMENT = 1.2; // Actual processing time per image
         const TIME_PER_AI_GENERATION = 17.0;
 
-        // Determine total estimated time
-        let totalTime = 0;
-        
-        // Add local alignment time if we have user uploaded files to process
-        // (Rough estimate: if not AI mode, or if mixed mode)
-        const nonAiFilesCount = uploadedFiles.length;
-        totalTime += nonAiFilesCount * TIME_PER_LOCAL_ALIGNMENT;
-
-        // Add AI generation time
+        // Calculate total estimated time
+        let totalEstimatedTime = 0;
+        totalEstimatedTime += uploadedFiles.length * TIME_PER_LOCAL_ALIGNMENT;
         if (isAiVariationsEnabled) {
-            totalTime += numVariations * TIME_PER_AI_GENERATION;
+            totalEstimatedTime += numVariations * TIME_PER_AI_GENERATION;
         }
 
-        // Calculate remaining time based on current progress percentage
-        const percentageRemaining = Math.max(0, (100 - processingProgress) / 100);
-        const secondsRemaining = Math.max(1, Math.ceil(totalTime * percentageRemaining));
+        // Calculate remaining time based on actual elapsed time
+        const secondsRemaining = Math.max(0, Math.ceil(totalEstimatedTime - elapsedTime));
 
         if (secondsRemaining <= 2) return "Finishing up...";
+        if (secondsRemaining === 0) return "Complete!";
         return `~${secondsRemaining}s remaining`;
-    }, [isProcessing, isAiVariationsEnabled, processingProgress, numVariations, uploadedFiles.length]);
+    }, [isProcessing, isAiVariationsEnabled, elapsedTime, numVariations, uploadedFiles.length]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
