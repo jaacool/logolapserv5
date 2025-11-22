@@ -468,7 +468,7 @@ export default function App() {
             let currentStage = 1;
 
             // Start smooth progress simulation for local alignment (stages 1-4)
-            const TIME_PER_LOCAL_ALIGNMENT = 1.2;
+            const TIME_PER_LOCAL_ALIGNMENT = 0.6; // 2x faster than actual processing time
             const totalLocalTime = totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT;
             const localStartTime = performance.now();
             let currentLocalProgress = 0;
@@ -688,7 +688,7 @@ export default function App() {
         if (!isProcessing) return null;
         
         // Heuristics (in seconds)
-        const TIME_PER_LOCAL_ALIGNMENT = 1.2; // Realistic time per image (was 0.5s, now 70% slower)
+        const TIME_PER_LOCAL_ALIGNMENT = 0.6; // 2x faster progress bar
         const TIME_PER_AI_GENERATION = 17.0;
 
         // Determine total estimated time
