@@ -476,20 +476,24 @@ export default function App() {
             const totalStages = alignmentStages + generationStages;
             let currentStage = 1;
 
-            // Start smooth progress simulation for local alignment (stages 1-4)
-            const TIME_PER_LOCAL_ALIGNMENT = 0.2; // Fast progress bar (much faster than actual processing)
-            const totalLocalTime = totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT;
-            const localStartTime = performance.now();
-            let currentLocalProgress = 0;
-            const localProgressInterval = setInterval(() => {
-                const elapsed = (performance.now() - localStartTime) / 1000;
-                const targetProgress = Math.min(LOCAL_PROGRESS_ALLOCATION, (elapsed / totalLocalTime) * LOCAL_PROGRESS_ALLOCATION);
+            // Calculate total estimated time to synchronize progress bar with countdown
+            const TIME_PER_LOCAL_ALIGNMENT = 1.2; // Realistic processing time
+            const TIME_PER_AI_GENERATION = 17.0;
+            const totalEstimatedTime = (totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT) + 
+                                        (isAiVariationsEnabled ? numVariations * TIME_PER_AI_GENERATION : 0);
+            
+            // Start global smooth progress simulation (0-100% based on total estimated time)
+            const globalStartTime = performance.now();
+            let currentProgress = 0;
+            const globalProgressInterval = setInterval(() => {
+                const elapsed = (performance.now() - globalStartTime) / 1000;
+                const targetProgress = Math.min(100, (elapsed / totalEstimatedTime) * 100);
                 
-                // Smooth increment: move towards target in small steps
-                if (currentLocalProgress < targetProgress) {
-                    currentLocalProgress = Math.min(targetProgress, currentLocalProgress + 0.5); // ~0.5% per 100ms
+                // Smooth increment: move towards target in small steps (~1% per 100ms)
+                if (currentProgress < targetProgress) {
+                    currentProgress = Math.min(targetProgress, currentProgress + 1);
                 }
-                setProcessingProgress(currentLocalProgress);
+                setProcessingProgress(currentProgress);
             }, 100);
 
             setProcessingStatus(`Stage ${currentStage}/${totalStages}: Aligning standard images...`);
@@ -593,29 +597,10 @@ export default function App() {
                 currentStage++;
             }
 
-            // Clear local progress interval (timer has reached target naturally)
-            clearInterval(localProgressInterval);
-
             let finalResults = stage3Results;
             if (isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey) {
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variations...`);
                 await yieldToMain();
-
-                // Start smooth time-based progress for AI generation
-                const aiStartTime = performance.now();
-                const TIME_PER_AI_GENERATION = 17.0;
-                const totalAiTime = numVariations * TIME_PER_AI_GENERATION;
-                let currentAiProgress = 0;
-                const aiProgressInterval = setInterval(() => {
-                    const elapsed = (performance.now() - aiStartTime) / 1000;
-                    const targetAiProgress = Math.min(AI_PROGRESS_ALLOCATION, (elapsed / totalAiTime) * AI_PROGRESS_ALLOCATION);
-                    
-                    // Smooth increment: move towards target in small steps
-                    if (currentAiProgress < targetAiProgress) {
-                        currentAiProgress = Math.min(targetAiProgress, currentAiProgress + 0.5); // ~0.5% per 100ms
-                    }
-                    setProcessingProgress(LOCAL_PROGRESS_ALLOCATION + currentAiProgress);
-                }, 100);
 
                 let referenceImages: ProcessedFile[] = [];
                 const masterRef = finalResults.find(f => f.id === masterFileId);
@@ -673,12 +658,10 @@ export default function App() {
                     
                     await yieldToMain();
                 }
-                
-                // Clear AI progress interval
-                clearInterval(aiProgressInterval);
             }
 
             // Clear timers and snap to 100%
+            clearInterval(globalProgressInterval);
             clearInterval(elapsedTimer);
             setProcessingProgress(100);
             
