@@ -616,8 +616,8 @@ export default function App() {
                             );
                             const variationId = `ai-var-${Date.now()}-${i}`;
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });
-                            // Update state immediately to show result in Previewer
-                            setProcessedFiles([...finalResults]);
+                            // Do not update state immediately to avoid intermediate rendering
+                            // setProcessedFiles([...finalResults]); 
                         }
                     } catch (err) {
                         console.error("Error generating AI variation:", err);
@@ -628,8 +628,13 @@ export default function App() {
                         const duration = (performance.now() - startTime) / 1000;
                         console.log(`Variation ${i + 1} took ${duration.toFixed(2)}s`);
                     }
-                    stepsCompleted++;
-                    setProcessingProgress((stepsCompleted / totalSteps) * 100);
+                    
+                    // Weighted Progress: AI generation takes up the last 80% of the bar
+                    const analysisProgress = 20;
+                    const aiProgressChunk = 80 / numVariations;
+                    const currentAiProgress = (i + 1) * aiProgressChunk;
+                    setProcessingProgress(analysisProgress + currentAiProgress);
+                    
                     await yieldToMain();
                 }
             }
@@ -645,6 +650,23 @@ export default function App() {
         aspectRatio, selectedSnippets, apiKey, contextImageFile
     ]);
     
+    // Calculate estimated time based on remaining variations (approx 6s per image)
+    const estimatedTimeRemaining = useMemo(() => {
+        if (!isProcessing || !isAiVariationsEnabled) return null;
+        const progressDecimal = processingProgress / 100;
+        // Assuming 20% is analysis, 80% is AI.
+        if (progressDecimal < 0.2) return "Calculating...";
+        
+        const aiPartCompleted = (progressDecimal - 0.2) / 0.8; // 0 to 1
+        const variationsCompleted = Math.floor(aiPartCompleted * numVariations);
+        const variationsRemaining = numVariations - variationsCompleted;
+        
+        if (variationsRemaining <= 0) return "Finishing up...";
+        
+        const secondsRemaining = variationsRemaining * 6; // 6 seconds per image heuristic
+        return `~${secondsRemaining}s remaining`;
+    }, [isProcessing, isAiVariationsEnabled, processingProgress, numVariations]);
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
       <header className="w-full max-w-7xl mx-auto flex flex-col items-center mb-6">
@@ -691,10 +713,15 @@ export default function App() {
           <div className="flex flex-col items-center justify-center text-center p-8">
             <Spinner />
             <p className="text-xl font-semibold mt-4 text-cyan-300">{processingStatus}</p>
-            <div className="w-64 mt-4 bg-gray-700 rounded-full h-2.5">
-              <div className="bg-cyan-400 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${processingProgress}%` }}></div>
+            <div className="w-64 mt-4 bg-gray-700 rounded-full h-2.5 overflow-hidden">
+              <div className="bg-cyan-400 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${processingProgress}%` }}></div>
             </div>
-            <p className="text-sm text-gray-400 mt-2">{Math.round(processingProgress)}%</p>
+            <div className="flex flex-col items-center mt-2">
+                <p className="text-sm text-gray-400">{Math.round(processingProgress)}%</p>
+                {estimatedTimeRemaining && (
+                    <p className="text-xs text-gray-500 mt-1 animate-pulse">{estimatedTimeRemaining}</p>
+                )}
+            </div>
           </div>
         )}
         
