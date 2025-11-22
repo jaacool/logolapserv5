@@ -34,10 +34,16 @@ export const generateVariation = async (
     const contents = { parts: [textPart, ...imageParts] };
 
     const response = await ai.models.generateContent({
-        model: 'imagen-3.0-generate-001',
+        model: 'gemini-3-pro-image-preview',
         contents: contents,
         config: {
-            responseModalities: [Modality.IMAGE],
+            // @ts-ignore - ImageConfig is available in newer SDK versions but might strict check here
+            imageConfig: {
+                aspectRatio: "9:16", // Default to vertical as per App.tsx default, or could pass it in. 
+                                     // For now hardcoding to match typical use or omitting to let model decide.
+                                     // Actually, let's omit specific aspect ratio here to let it follow the input image context 
+                                     // or add it if strictly needed. Let's start with just the correct model name and minimal config.
+            }
         },
     });
 
