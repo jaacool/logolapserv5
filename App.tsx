@@ -18,10 +18,11 @@ import { AspectRatioSelector } from './components/AspectRatioSelector';
 import { AIVariationsToggle } from './components/AIVariationsToggle';
 import { VariationSelector } from './components/VariationSelector';
 import { PromptCustomizer } from './components/PromptCustomizer';
+import { ContextInput } from './components/ContextInput';
 
 declare var JSZip: any;
 
-const AI_PROMPT_BASE = "Generate a photorealistic image where the logo matches the reference EXACTLY 1:1. CRITICAL: The outlines, text, and graphics of the logo must remain completely unchanged. The logo must appear perfectly flat, frontal, and undistorted. Do not apply any 3D perspective or warping to the logo. Change ONLY the background, texture, or surface area *outside* and *around* the logo. The goal is to place the identical, flat logo into a new context without modifying the logo itself.";
+const AI_PROMPT_BASE = "Generate a photorealistic image where the logo matches the reference EXACTLY 1:1. CRITICAL: The outlines, text, and graphics of the logo must remain completely unchanged. The logo must appear perfectly flat, frontal, and undistorted. Do not apply any 3D perspective or warping to the logo. Change ONLY the background, texture, or surface area *outside* and *around* the logo. The goal is to place the identical, flat logo into a new context without modifying the logo itself. PHOTOGRAPHY STYLE: The image must look like it was shot with a 150mm telephoto lens in a super close-up macro style. Focus deeply on the texture and details of the surface surrounding the logo, with a shallow depth of field for the background elements.";
 
 const DEFAULT_PROMPT_SNIPPETS: string[] = [
     'a storefront',
@@ -75,6 +76,7 @@ export default function App() {
   const [promptSnippets, setPromptSnippets] = useState<string[]>(DEFAULT_PROMPT_SNIPPETS);
   const [selectedSnippets, setSelectedSnippets] = useState<string[]>(DEFAULT_PROMPT_SNIPPETS);
   const [apiKey, setApiKey] = useState<string>('');
+  const [projectContext, setProjectContext] = useState<string>('');
   
   useEffect(() => {
     const checkCv = () => {
@@ -580,7 +582,11 @@ export default function App() {
                     setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variation ${i + 1}/${numVariations}...`);
                     try {
                         const randomSnippet = selectedSnippets[Math.floor(Math.random() * selectedSnippets.length)];
-                        const fullPrompt = `${AI_PROMPT_BASE} The new scene should be: ${randomSnippet}.`;
+                        let fullPrompt = `${AI_PROMPT_BASE} The new scene should be: ${randomSnippet}.`;
+                        
+                        if (projectContext.trim()) {
+                            fullPrompt += ` CONTEXT/THEME: ${projectContext.trim()}. Ensure the generated background fits this context perfectly.`;
+                        }
                         
                         const variationDataUrl = await generateVariation(referenceImages, fullPrompt, apiKey);
                         const variationImageElement = await dataUrlToImageElement(variationDataUrl);
@@ -739,6 +745,11 @@ export default function App() {
                                     selectedSnippets={selectedSnippets}
                                     onSelectionChange={handleSnippetSelectionChange}
                                     onAddSnippet={handleAddSnippet}
+                                />
+                                <ContextInput 
+                                    value={projectContext} 
+                                    onChange={setProjectContext} 
+                                    isDisabled={!isAiVariationsEnabled}
                                 />
                                 <div className="text-center p-3 rounded-md bg-gray-700/50 border border-gray-600 w-full max-w-xs flex flex-col gap-2">
                                     <label htmlFor="api-key-input" className="text-sm text-gray-300 font-medium">Google AI API Key</label>
