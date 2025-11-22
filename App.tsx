@@ -21,7 +21,7 @@ import { PromptCustomizer } from './components/PromptCustomizer';
 
 declare var JSZip: any;
 
-const AI_PROMPT_BASE = "Generate a completely new and creative photorealistic image. Crucially, the logo must appear perfectly flat and be viewed from a direct, head-on, frontal perspective, with zero angle or perspective distortion.The reference images show this exact logo. Your task is to create a completely new, photorealistic background scene. The logo's shape, colors, style, position, scale, and 2D rotation must be identical to the references. Do not wrap, bend, skew, or apply any 3D perspective to the logo itself.";
+const AI_PROMPT_BASE = "Generate a photorealistic image where the logo matches the reference EXACTLY 1:1. CRITICAL: The outlines, text, and graphics of the logo must remain completely unchanged. The logo must appear perfectly flat, frontal, and undistorted. Do not apply any 3D perspective or warping to the logo. Change ONLY the background, texture, or surface area *outside* and *around* the logo. The goal is to place the identical, flat logo into a new context without modifying the logo itself.";
 
 const DEFAULT_PROMPT_SNIPPETS: string[] = [
     'a storefront',
@@ -568,7 +568,13 @@ export default function App() {
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variations...`);
                 await yieldToMain();
 
-                const referenceImages = finalResults.slice(0, 5);
+                let referenceImages: ProcessedFile[] = [];
+                const masterRef = finalResults.find(f => f.id === masterFileId);
+                if (masterRef) {
+                    referenceImages = [masterRef];
+                } else if (finalResults.length > 0) {
+                    referenceImages = [finalResults[0]];
+                }
                 
                 for (let i = 0; i < numVariations; i++) {
                     setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variation ${i + 1}/${numVariations}...`);

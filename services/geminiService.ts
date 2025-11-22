@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import type { ProcessedFile } from '../types';
+import { resizeImage } from '../utils/fileUtils';
 
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
@@ -11,7 +12,15 @@ export const generateVariation = async (
 ): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey });
 
-    const imageParts = referenceImages.map(image => ({
+    // Resize images to avoid payload limits (max 1024px)
+    const resizedImages = await Promise.all(
+        referenceImages.map(async (img) => ({
+            ...img,
+            processedUrl: await resizeImage(img.processedUrl, 1024, 1024)
+        }))
+    );
+
+    const imageParts = resizedImages.map(image => ({
         inlineData: {
             mimeType: 'image/png',
             data: dataUrlToBase64(image.processedUrl),
@@ -25,7 +34,7 @@ export const generateVariation = async (
     const contents = { parts: [textPart, ...imageParts] };
 
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3.0-pro-image-preview',
         contents: contents,
         config: {
             responseModalities: [Modality.IMAGE],
