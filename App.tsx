@@ -19,6 +19,8 @@ import { AIVariationsToggle } from './components/AIVariationsToggle';
 import { VariationSelector } from './components/VariationSelector';
 import { PromptCustomizer } from './components/PromptCustomizer';
 import { ContextInput } from './components/ContextInput';
+import { ContextImageInput } from './components/ContextImageInput';
+import { fileToBase64 } from './utils/fileUtils';
 
 declare var JSZip: any;
 
@@ -77,6 +79,7 @@ export default function App() {
   const [selectedSnippets, setSelectedSnippets] = useState<string[]>(DEFAULT_PROMPT_SNIPPETS);
   const [apiKey, setApiKey] = useState<string>('');
   const [projectContext, setProjectContext] = useState<string>('');
+  const [contextImageFile, setContextImageFile] = useState<File | null>(null);
   
   useEffect(() => {
     const checkCv = () => {
@@ -584,11 +587,21 @@ export default function App() {
                         const randomSnippet = selectedSnippets[Math.floor(Math.random() * selectedSnippets.length)];
                         let fullPrompt = `${AI_PROMPT_BASE} The new scene should be: ${randomSnippet}.`;
                         
+                        let contextBase64: string | undefined;
+                        if (contextImageFile) {
+                             try {
+                                contextBase64 = await fileToBase64(contextImageFile);
+                                fullPrompt += ` REFERENCE IMAGE: Use the attached context image as a strong reference for the lighting, color palette, and environment style.`;
+                             } catch (e) {
+                                 console.error("Failed to process context image:", e);
+                             }
+                        }
+
                         if (projectContext.trim()) {
                             fullPrompt += ` CONTEXT/THEME: ${projectContext.trim()}. Ensure the generated background fits this context perfectly.`;
                         }
                         
-                        const variationDataUrl = await generateVariation(referenceImages, fullPrompt, apiKey);
+                        const variationDataUrl = await generateVariation(referenceImages, fullPrompt, apiKey, contextBase64);
                         const variationImageElement = await dataUrlToImageElement(variationDataUrl);
 
                         const masterResult = finalResults.find(f => f.id === masterFileId);
@@ -621,7 +634,7 @@ export default function App() {
     }, [
         uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, 
         isEnsembleCorrectionEnabled, isAiVariationsEnabled, numVariations, 
-        aspectRatio, selectedSnippets, apiKey
+        aspectRatio, selectedSnippets, apiKey, contextImageFile
     ]);
     
   return (
@@ -739,12 +752,17 @@ export default function App() {
                         <AIVariationsToggle isChecked={isAiVariationsEnabled} onChange={setIsAiVariationsEnabled} />
                         {isAiVariationsEnabled && (
                             <div className="w-full flex flex-col items-center gap-4 animate-fade-in">
-                                <VariationSelector selectedValue={numVariations} onSelectValue={setNumVariations} max={4}/>
+                                <VariationSelector selectedValue={numVariations} onSelectValue={setNumVariations} max={12}/>
                                 <PromptCustomizer 
                                     snippets={promptSnippets}
                                     selectedSnippets={selectedSnippets}
                                     onSelectionChange={handleSnippetSelectionChange}
                                     onAddSnippet={handleAddSnippet}
+                                />
+                                <ContextImageInput 
+                                    selectedImage={contextImageFile} 
+                                    onImageSelect={setContextImageFile} 
+                                    isDisabled={!isAiVariationsEnabled}
                                 />
                                 <ContextInput 
                                     value={projectContext} 

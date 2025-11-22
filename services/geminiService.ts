@@ -8,7 +8,8 @@ const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
 export const generateVariation = async (
     referenceImages: ProcessedFile[], 
     prompt: string,
-    apiKey: string
+    apiKey: string,
+    contextImageUrl?: string
 ): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey });
 
@@ -26,6 +27,16 @@ export const generateVariation = async (
             data: dataUrlToBase64(image.processedUrl),
         },
     }));
+
+    if (contextImageUrl) {
+        const resizedContext = await resizeImage(contextImageUrl, 1024, 1024);
+        imageParts.push({
+            inlineData: {
+                mimeType: 'image/png',
+                data: dataUrlToBase64(resizedContext),
+            }
+        });
+    }
 
     const textPart = {
         text: prompt,
