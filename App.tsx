@@ -586,25 +586,50 @@ export default function App() {
                     const startTime = performance.now();
                     console.time(`Generate Variation ${i + 1}`);
                     
-                    try {
-                        const randomSnippet = selectedSnippets[Math.floor(Math.random() * selectedSnippets.length)];
-                        let fullPrompt = `${AI_PROMPT_BASE} The new scene should be: ${randomSnippet}.`;
-                        
-                        let contextBase64: string | undefined;
-                        if (contextImageFile) {
-                             try {
-                                contextBase64 = await fileToBase64(contextImageFile);
-                                fullPrompt += ` REFERENCE IMAGE: Use the attached context image as a strong reference for the lighting, color palette, and environment style.`;
-                             } catch (e) {
-                                 console.error("Failed to process context image:", e);
-                             }
-                        }
+                    const randomSnippet = selectedSnippets[Math.floor(Math.random() * selectedSnippets.length)];
+                    let fullPrompt = `${AI_PROMPT_BASE} The new scene should be: ${randomSnippet}.`;
+                    
+                    let contextBase64: string | undefined;
+                    if (contextImageFile) {
+                            try {
+                            contextBase64 = await fileToBase64(contextImageFile);
+                            fullPrompt += ` REFERENCE IMAGE: Use the attached context image as a strong reference for the lighting, color palette, and environment style.`;
+                            } catch (e) {
+                                console.error("Failed to process context image:", e);
+                            }
+                    }
 
-                        if (projectContext.trim()) {
-                            fullPrompt += ` CONTEXT/THEME: ${projectContext.trim()}. Ensure the generated background fits this context perfectly.`;
-                        }
-                        
+                    if (projectContext.trim()) {
+                        fullPrompt += ` CONTEXT/THEME: ${projectContext.trim()}. Ensure the generated background fits this context perfectly.`;
+                    }
+                    
+                    // Smooth Progress Simulation
+                    // We want to bridge the gap from current progress to the target progress for this step
+                    // over the expected duration (17s).
+                    const analysisProgress = 20;
+                    const aiProgressChunk = 80 / numVariations;
+                    const startStepProgress = analysisProgress + (i * aiProgressChunk);
+                    const targetStepProgress = analysisProgress + ((i + 1) * aiProgressChunk);
+                    
+                    // Start simulation
+                    let currentSimulatedProgress = startStepProgress;
+                    const progressInterval = setInterval(() => {
+                        setProcessingProgress(prev => {
+                            // Increment by ~0.5% every 100ms, aiming to fill the chunk in ~16s
+                            // chunk=20% (for 4 vars). 16s = 160 steps. 20/160 = 0.125 per step.
+                            // chunk=80% (for 1 var). 16s = 160 steps. 80/160 = 0.5 per step.
+                            const increment = aiProgressChunk / (170); // 17s * 10 steps/s
+                            const next = prev + increment;
+                            return next >= targetStepProgress ? targetStepProgress : next;
+                        });
+                    }, 100);
+
+                    try {
                         const variationDataUrl = await generateVariation(referenceImages, fullPrompt, apiKey, contextBase64);
+                        clearInterval(progressInterval);
+                        // Snap to target progress
+                        setProcessingProgress(targetStepProgress);
+                        
                         const variationImageElement = await dataUrlToImageElement(variationDataUrl);
 
                         const masterResult = finalResults.find(f => f.id === masterFileId);
@@ -616,28 +641,21 @@ export default function App() {
                             );
                             const variationId = `ai-var-${Date.now()}-${i}`;
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });
-                            // Do not update state immediately to avoid intermediate rendering
-                            // setProcessedFiles([...finalResults]); 
                         }
                     } catch (err) {
+                        clearInterval(progressInterval);
                         console.error("Error generating AI variation:", err);
                         const friendlyError = getFriendlyErrorMessage(err, `AI Variation ${i + 1}`);
                         setError(prev => (prev ? prev + ' | ' : '') + friendlyError);
                     } finally {
+                        clearInterval(progressInterval); // Safety clear
                         console.timeEnd(`Generate Variation ${i + 1}`);
                         const duration = (performance.now() - startTime) / 1000;
                         console.log(`Variation ${i + 1} took ${duration.toFixed(2)}s`);
                     }
                     
-                    // Weighted Progress: AI generation takes up the last 80% of the bar
-                    const analysisProgress = 20;
-                    const aiProgressChunk = 80 / numVariations;
-                    const currentAiProgress = (i + 1) * aiProgressChunk;
-                    setProcessingProgress(analysisProgress + currentAiProgress);
-                    
                     await yieldToMain();
                 }
-            }
 
             setProcessedFiles(finalResults);
             setProcessingStatus('Processing complete!');
@@ -656,7 +674,7 @@ export default function App() {
         
         // Heuristics (in seconds)
         const TIME_PER_LOCAL_ALIGNMENT = 0.5;
-        const TIME_PER_AI_GENERATION = 7.0;
+        const TIME_PER_AI_GENERATION = 17.0;
 
         // Determine total estimated time
         let totalTime = 0;
@@ -672,9 +690,7 @@ export default function App() {
         }
 
         // Calculate remaining time based on current progress percentage
-        // This assumes linear progress distribution, which isn't perfect but better than nothing
-        // A better approach would be to track actual stage, but progress % is a good proxy
-        const percentageRemaining = (100 - processingProgress) / 100;
+        const percentageRemaining = Math.max(0, (100 - processingProgress) / 100);
         const secondsRemaining = Math.max(1, Math.ceil(totalTime * percentageRemaining));
 
         if (secondsRemaining <= 2) return "Finishing up...";
