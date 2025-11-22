@@ -444,20 +444,6 @@ export default function App() {
 
         const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
 
-        // Calculate total estimated time for smooth progress
-        const TIME_PER_LOCAL_ALIGNMENT = 0.5;
-        const TIME_PER_AI_GENERATION = 17.0;
-        const totalEstimatedTime = (uploadedFiles.length * TIME_PER_LOCAL_ALIGNMENT) + 
-                                    (isAiVariationsEnabled ? numVariations * TIME_PER_AI_GENERATION : 0);
-        
-        // Start global smooth progress simulation
-        const startTime = performance.now();
-        const progressSimulationInterval = setInterval(() => {
-            const elapsed = (performance.now() - startTime) / 1000; // seconds
-            const estimatedProgress = Math.min(99, (elapsed / totalEstimatedTime) * 100);
-            setProcessingProgress(estimatedProgress);
-        }, 100); // Update every 100ms for smooth animation
-
         setTimeout(async () => {
             const masterFile = uploadedFiles.find(f => f.id === masterFileId);
             if (!masterFile) {
@@ -470,8 +456,11 @@ export default function App() {
             const simpleMatchFiles = uploadedFiles.filter(f => f.needsSimpleMatch && f.id !== masterFileId);
             const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
             const totalAlignmentFiles = standardFiles.length + simpleMatchFiles.length + perspectiveFiles.length;
-            const totalSteps = totalAlignmentFiles + (isAiVariationsEnabled ? numVariations : 0);
-            let stepsCompleted = 0;
+            
+            // Progress allocation: 20% for local alignment, 80% for AI generation
+            const LOCAL_PROGRESS_ALLOCATION = 20;
+            const AI_PROGRESS_ALLOCATION = 80;
+            let filesProcessed = 0;
 
             const alignmentStages = 2 + (perspectiveFiles.length > 0 ? 1 : 0);
             const generationStages = (isAiVariationsEnabled ? 1 : 0);
@@ -494,8 +483,8 @@ export default function App() {
                     console.error("Error processing standard file:", targetFile.file.name, err);
                     setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                 }
-                stepsCompleted++;
-                setProcessingProgress((stepsCompleted / totalSteps) * 100);
+                filesProcessed++;
+                setProcessingProgress((filesProcessed / totalAlignmentFiles) * LOCAL_PROGRESS_ALLOCATION);
                 await yieldToMain();
             }
             currentStage++;
@@ -519,8 +508,8 @@ export default function App() {
                         console.error("Error processing simple match file:", targetFile.file.name, err);
                         setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                     }
-                    stepsCompleted++;
-                    setProcessingProgress((stepsCompleted / totalSteps) * 100);
+                    filesProcessed++;
+                    setProcessingProgress((filesProcessed / totalAlignmentFiles) * LOCAL_PROGRESS_ALLOCATION);
                     await yieldToMain();
                 }
                 stage2Results = [...stage1Results, ...simpleMatchResults];
@@ -574,8 +563,8 @@ export default function App() {
                             console.error("Error processing perspective file:", targetFile.file.name, err);
                             setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                         }
-                        stepsCompleted++;
-                        setProcessingProgress((stepsCompleted / totalSteps) * 100);
+                        filesProcessed++;
+                        setProcessingProgress((filesProcessed / totalAlignmentFiles) * LOCAL_PROGRESS_ALLOCATION);
                         await yieldToMain();
                     }
                 }
@@ -586,6 +575,16 @@ export default function App() {
             if (isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey) {
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variations...`);
                 await yieldToMain();
+
+                // Start smooth time-based progress for AI generation
+                const aiStartTime = performance.now();
+                const TIME_PER_AI_GENERATION = 17.0;
+                const totalAiTime = numVariations * TIME_PER_AI_GENERATION;
+                const aiProgressInterval = setInterval(() => {
+                    const elapsed = (performance.now() - aiStartTime) / 1000;
+                    const aiProgress = Math.min(AI_PROGRESS_ALLOCATION, (elapsed / totalAiTime) * AI_PROGRESS_ALLOCATION);
+                    setProcessingProgress(LOCAL_PROGRESS_ALLOCATION + aiProgress);
+                }, 100);
 
                 let referenceImages: ProcessedFile[] = [];
                 const masterRef = finalResults.find(f => f.id === masterFileId);
@@ -643,10 +642,12 @@ export default function App() {
                     
                     await yieldToMain();
                 }
+                
+                // Clear AI progress interval
+                clearInterval(aiProgressInterval);
             }
 
-            // Clear the global progress simulation and snap to 100%
-            clearInterval(progressSimulationInterval);
+            // Snap to 100%
             setProcessingProgress(100);
             
             setProcessedFiles(finalResults);
