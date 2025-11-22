@@ -110,8 +110,10 @@ export const Previewer: React.FC<PreviewerProps> = ({
   }
   
   const currentFile = files[currentIndex];
-  const originalUploadedFile = originalFiles.find(f => f.id === currentFile.id);
-  const isCurrentFileMaster = currentFile?.id === masterFileId;
+  if (!currentFile) return null;
+
+  const originalUploadedFile = originalFiles.find(f => f && f.id === currentFile.id);
+  const isCurrentFileMaster = currentFile.id === masterFileId;
 
   // For user-uploaded files, the original is their preview.
   // For AI variations, their "original" is the unaligned version stored in debugUrl.
@@ -260,6 +262,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
       {viewMode === 'grid' && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 w-full">
             {files.map((file) => {
+            if (!file) return null;
             const isMaster = file.id === masterFileId;
             const imageUrl = (isDebugMode ? file.debugUrl : file.processedUrl) || file.processedUrl;
             
