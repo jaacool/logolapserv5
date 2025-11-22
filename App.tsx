@@ -457,9 +457,9 @@ export default function App() {
             const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
             const totalAlignmentFiles = standardFiles.length + simpleMatchFiles.length + perspectiveFiles.length;
             
-            // Progress allocation: 20% for local alignment, 80% for AI generation
-            const LOCAL_PROGRESS_ALLOCATION = 20;
-            const AI_PROGRESS_ALLOCATION = 80;
+            // Progress allocation: if AI is enabled, 20% for local + 80% for AI, otherwise 100% for local
+            const LOCAL_PROGRESS_ALLOCATION = isAiVariationsEnabled ? 20 : 100;
+            const AI_PROGRESS_ALLOCATION = isAiVariationsEnabled ? 80 : 0;
             let filesProcessed = 0;
 
             const alignmentStages = 2 + (perspectiveFiles.length > 0 ? 1 : 0);
@@ -666,7 +666,7 @@ export default function App() {
         if (!isProcessing) return null;
         
         // Heuristics (in seconds)
-        const TIME_PER_LOCAL_ALIGNMENT = 0.5;
+        const TIME_PER_LOCAL_ALIGNMENT = 1.2; // Realistic time per image (was 0.5s, now 70% slower)
         const TIME_PER_AI_GENERATION = 17.0;
 
         // Determine total estimated time
