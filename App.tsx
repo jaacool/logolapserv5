@@ -650,22 +650,36 @@ export default function App() {
         aspectRatio, selectedSnippets, apiKey, contextImageFile
     ]);
     
-    // Calculate estimated time based on remaining variations (approx 6s per image)
+    // Calculate estimated time based on remaining steps
     const estimatedTimeRemaining = useMemo(() => {
-        if (!isProcessing || !isAiVariationsEnabled) return null;
-        const progressDecimal = processingProgress / 100;
-        // Assuming 20% is analysis, 80% is AI.
-        if (progressDecimal < 0.2) return "Calculating...";
+        if (!isProcessing) return null;
         
-        const aiPartCompleted = (progressDecimal - 0.2) / 0.8; // 0 to 1
-        const variationsCompleted = Math.floor(aiPartCompleted * numVariations);
-        const variationsRemaining = numVariations - variationsCompleted;
+        // Heuristics (in seconds)
+        const TIME_PER_LOCAL_ALIGNMENT = 0.5;
+        const TIME_PER_AI_GENERATION = 7.0;
+
+        // Determine total estimated time
+        let totalTime = 0;
         
-        if (variationsRemaining <= 0) return "Finishing up...";
-        
-        const secondsRemaining = variationsRemaining * 6; // 6 seconds per image heuristic
+        // Add local alignment time if we have user uploaded files to process
+        // (Rough estimate: if not AI mode, or if mixed mode)
+        const nonAiFilesCount = uploadedFiles.length;
+        totalTime += nonAiFilesCount * TIME_PER_LOCAL_ALIGNMENT;
+
+        // Add AI generation time
+        if (isAiVariationsEnabled) {
+            totalTime += numVariations * TIME_PER_AI_GENERATION;
+        }
+
+        // Calculate remaining time based on current progress percentage
+        // This assumes linear progress distribution, which isn't perfect but better than nothing
+        // A better approach would be to track actual stage, but progress % is a good proxy
+        const percentageRemaining = (100 - processingProgress) / 100;
+        const secondsRemaining = Math.max(1, Math.ceil(totalTime * percentageRemaining));
+
+        if (secondsRemaining <= 2) return "Finishing up...";
         return `~${secondsRemaining}s remaining`;
-    }, [isProcessing, isAiVariationsEnabled, processingProgress, numVariations]);
+    }, [isProcessing, isAiVariationsEnabled, processingProgress, numVariations, uploadedFiles.length]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
@@ -709,23 +723,32 @@ export default function App() {
             </div>
         )}
 
-        {cvReady && isProcessing && processedFiles.length === 0 && (
-          <div className="flex flex-col items-center justify-center text-center p-8">
+        {cvReady && isProcessing && (
+          <div className="flex flex-col items-center justify-center text-center p-8 animate-fade-in">
             <Spinner />
             <p className="text-xl font-semibold mt-4 text-cyan-300">{processingStatus}</p>
-            <div className="w-64 mt-4 bg-gray-700 rounded-full h-2.5 overflow-hidden">
-              <div className="bg-cyan-400 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${processingProgress}%` }}></div>
+            
+            {/* Progress Bar */}
+            <div className="w-64 mt-4 bg-gray-700 rounded-full h-2.5 overflow-hidden shadow-inner">
+              <div 
+                className="bg-cyan-400 h-2.5 rounded-full transition-all duration-300 ease-out" 
+                style={{ width: `${processingProgress}%` }}
+              ></div>
             </div>
-            <div className="flex flex-col items-center mt-2">
-                <p className="text-sm text-gray-400">{Math.round(processingProgress)}%</p>
+
+            {/* Stats & Time Estimate */}
+            <div className="flex flex-col items-center mt-3 gap-1">
+                <p className="text-sm text-gray-400 font-mono">{Math.round(processingProgress)}%</p>
                 {estimatedTimeRemaining && (
-                    <p className="text-xs text-gray-500 mt-1 animate-pulse">{estimatedTimeRemaining}</p>
+                    <p className="text-xs text-cyan-400/80 font-medium animate-pulse">
+                        {estimatedTimeRemaining}
+                    </p>
                 )}
             </div>
           </div>
         )}
         
-        {cvReady && processedFiles.length > 0 && (
+        {cvReady && !isProcessing && processedFiles.length > 0 && (
             <Previewer 
                 files={processedFiles}
                 originalFiles={uploadedFiles}
@@ -740,9 +763,6 @@ export default function App() {
                 fixingImageId={fixingImageId}
                 onExport={handleExport}
                 isExporting={isExporting}
-                isProcessing={isProcessing}
-                processingStatus={processingStatus}
-                processingProgress={processingProgress}
             />
         )}
         
