@@ -444,6 +444,20 @@ export default function App() {
 
         const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
 
+        // Calculate total estimated time for smooth progress
+        const TIME_PER_LOCAL_ALIGNMENT = 0.5;
+        const TIME_PER_AI_GENERATION = 17.0;
+        const totalEstimatedTime = (uploadedFiles.length * TIME_PER_LOCAL_ALIGNMENT) + 
+                                    (isAiVariationsEnabled ? numVariations * TIME_PER_AI_GENERATION : 0);
+        
+        // Start global smooth progress simulation
+        const startTime = performance.now();
+        const progressSimulationInterval = setInterval(() => {
+            const elapsed = (performance.now() - startTime) / 1000; // seconds
+            const estimatedProgress = Math.min(99, (elapsed / totalEstimatedTime) * 100);
+            setProcessingProgress(estimatedProgress);
+        }, 100); // Update every 100ms for smooth animation
+
         setTimeout(async () => {
             const masterFile = uploadedFiles.find(f => f.id === masterFileId);
             if (!masterFile) {
@@ -602,34 +616,9 @@ export default function App() {
                     if (projectContext.trim()) {
                         fullPrompt += ` CONTEXT/THEME: ${projectContext.trim()}. Ensure the generated background fits this context perfectly.`;
                     }
-                    
-                    // Smooth Progress Simulation
-                    // We want to bridge the gap from current progress to the target progress for this step
-                    // over the expected duration (17s).
-                    const analysisProgress = 20;
-                    const aiProgressChunk = 80 / numVariations;
-                    const startStepProgress = analysisProgress + (i * aiProgressChunk);
-                    const targetStepProgress = analysisProgress + ((i + 1) * aiProgressChunk);
-                    
-                    // Start simulation
-                    let currentSimulatedProgress = startStepProgress;
-                    const progressInterval = setInterval(() => {
-                        setProcessingProgress(prev => {
-                            // Increment by ~0.5% every 100ms, aiming to fill the chunk in ~16s
-                            // chunk=20% (for 4 vars). 16s = 160 steps. 20/160 = 0.125 per step.
-                            // chunk=80% (for 1 var). 16s = 160 steps. 80/160 = 0.5 per step.
-                            const increment = aiProgressChunk / (170); // 17s * 10 steps/s
-                            const next = prev + increment;
-                            return next >= targetStepProgress ? targetStepProgress : next;
-                        });
-                    }, 100);
 
                     try {
                         const variationDataUrl = await generateVariation(referenceImages, fullPrompt, apiKey, contextBase64);
-                        clearInterval(progressInterval);
-                        // Snap to target progress
-                        setProcessingProgress(targetStepProgress);
-                        
                         const variationImageElement = await dataUrlToImageElement(variationDataUrl);
 
                         const masterResult = finalResults.find(f => f.id === masterFileId);
@@ -643,12 +632,10 @@ export default function App() {
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });
                         }
                     } catch (err) {
-                        clearInterval(progressInterval);
                         console.error("Error generating AI variation:", err);
                         const friendlyError = getFriendlyErrorMessage(err, `AI Variation ${i + 1}`);
                         setError(prev => (prev ? prev + ' | ' : '') + friendlyError);
                     } finally {
-                        clearInterval(progressInterval); // Safety clear
                         console.timeEnd(`Generate Variation ${i + 1}`);
                         const duration = (performance.now() - startTime) / 1000;
                         console.log(`Variation ${i + 1} took ${duration.toFixed(2)}s`);
@@ -658,6 +645,10 @@ export default function App() {
                 }
             }
 
+            // Clear the global progress simulation and snap to 100%
+            clearInterval(progressSimulationInterval);
+            setProcessingProgress(100);
+            
             setProcessedFiles(finalResults);
             setProcessingStatus('Processing complete!');
             setIsProcessing(false);
