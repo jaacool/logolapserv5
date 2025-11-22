@@ -471,10 +471,16 @@ export default function App() {
             const TIME_PER_LOCAL_ALIGNMENT = 1.2;
             const totalLocalTime = totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT;
             const localStartTime = performance.now();
+            let currentLocalProgress = 0;
             const localProgressInterval = setInterval(() => {
                 const elapsed = (performance.now() - localStartTime) / 1000;
-                const localProgress = Math.min(LOCAL_PROGRESS_ALLOCATION, (elapsed / totalLocalTime) * LOCAL_PROGRESS_ALLOCATION);
-                setProcessingProgress(localProgress);
+                const targetProgress = Math.min(LOCAL_PROGRESS_ALLOCATION, (elapsed / totalLocalTime) * LOCAL_PROGRESS_ALLOCATION);
+                
+                // Smooth increment: move towards target in small steps
+                if (currentLocalProgress < targetProgress) {
+                    currentLocalProgress = Math.min(targetProgress, currentLocalProgress + 0.5); // ~0.5% per 100ms
+                }
+                setProcessingProgress(currentLocalProgress);
             }, 100);
 
             setProcessingStatus(`Stage ${currentStage}/${totalStages}: Aligning standard images...`);
@@ -578,9 +584,8 @@ export default function App() {
                 currentStage++;
             }
 
-            // Clear local progress interval and snap to target
+            // Clear local progress interval (timer has reached target naturally)
             clearInterval(localProgressInterval);
-            setProcessingProgress(LOCAL_PROGRESS_ALLOCATION);
 
             let finalResults = stage3Results;
             if (isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey) {
@@ -591,10 +596,16 @@ export default function App() {
                 const aiStartTime = performance.now();
                 const TIME_PER_AI_GENERATION = 17.0;
                 const totalAiTime = numVariations * TIME_PER_AI_GENERATION;
+                let currentAiProgress = 0;
                 const aiProgressInterval = setInterval(() => {
                     const elapsed = (performance.now() - aiStartTime) / 1000;
-                    const aiProgress = Math.min(AI_PROGRESS_ALLOCATION, (elapsed / totalAiTime) * AI_PROGRESS_ALLOCATION);
-                    setProcessingProgress(LOCAL_PROGRESS_ALLOCATION + aiProgress);
+                    const targetAiProgress = Math.min(AI_PROGRESS_ALLOCATION, (elapsed / totalAiTime) * AI_PROGRESS_ALLOCATION);
+                    
+                    // Smooth increment: move towards target in small steps
+                    if (currentAiProgress < targetAiProgress) {
+                        currentAiProgress = Math.min(targetAiProgress, currentAiProgress + 0.5); // ~0.5% per 100ms
+                    }
+                    setProcessingProgress(LOCAL_PROGRESS_ALLOCATION + currentAiProgress);
                 }, 100);
 
                 let referenceImages: ProcessedFile[] = [];
