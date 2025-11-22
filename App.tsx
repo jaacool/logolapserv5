@@ -467,6 +467,16 @@ export default function App() {
             const totalStages = alignmentStages + generationStages;
             let currentStage = 1;
 
+            // Start smooth progress simulation for local alignment (stages 1-4)
+            const TIME_PER_LOCAL_ALIGNMENT = 1.2;
+            const totalLocalTime = totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT;
+            const localStartTime = performance.now();
+            const localProgressInterval = setInterval(() => {
+                const elapsed = (performance.now() - localStartTime) / 1000;
+                const localProgress = Math.min(LOCAL_PROGRESS_ALLOCATION, (elapsed / totalLocalTime) * LOCAL_PROGRESS_ALLOCATION);
+                setProcessingProgress(localProgress);
+            }, 100);
+
             setProcessingStatus(`Stage ${currentStage}/${totalStages}: Aligning standard images...`);
             await yieldToMain();
 
@@ -484,7 +494,6 @@ export default function App() {
                     setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                 }
                 filesProcessed++;
-                setProcessingProgress((filesProcessed / totalAlignmentFiles) * LOCAL_PROGRESS_ALLOCATION);
                 await yieldToMain();
             }
             currentStage++;
@@ -509,7 +518,6 @@ export default function App() {
                         setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                     }
                     filesProcessed++;
-                    setProcessingProgress((filesProcessed / totalAlignmentFiles) * LOCAL_PROGRESS_ALLOCATION);
                     await yieldToMain();
                 }
                 stage2Results = [...stage1Results, ...simpleMatchResults];
@@ -564,12 +572,15 @@ export default function App() {
                             setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                         }
                         filesProcessed++;
-                        setProcessingProgress((filesProcessed / totalAlignmentFiles) * LOCAL_PROGRESS_ALLOCATION);
                         await yieldToMain();
                     }
                 }
                 currentStage++;
             }
+
+            // Clear local progress interval and snap to target
+            clearInterval(localProgressInterval);
+            setProcessingProgress(LOCAL_PROGRESS_ALLOCATION);
 
             let finalResults = stage3Results;
             if (isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey) {
