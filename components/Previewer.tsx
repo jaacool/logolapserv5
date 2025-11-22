@@ -18,6 +18,9 @@ interface PreviewerProps {
   fixingImageId: string | null;
   onExport: () => void;
   isExporting: boolean;
+  isProcessing?: boolean;
+  processingStatus?: string;
+  processingProgress?: number;
 }
 
 export const Previewer: React.FC<PreviewerProps> = ({ 
@@ -33,7 +36,10 @@ export const Previewer: React.FC<PreviewerProps> = ({
     onSimpleMatchFix,
     fixingImageId,
     onExport,
-    isExporting
+    isExporting,
+    isProcessing,
+    processingStatus,
+    processingProgress
 }) => {
   const [viewMode, setViewMode] = useState<'grid' | 'single'>('single');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -139,15 +145,30 @@ export const Previewer: React.FC<PreviewerProps> = ({
 
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col items-center">
-      <div className="w-full flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 p-2 bg-gray-800/50 rounded-lg">
-        <div className="flex items-center gap-4 flex-wrap">
+      <div className="w-full flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 p-2 bg-gray-800/50 rounded-lg relative overflow-hidden">
+        {isProcessing && (
+             <div className="absolute bottom-0 left-0 h-1 bg-cyan-500 transition-all duration-300 ease-out z-10" style={{ width: `${processingProgress || 0}%` }}></div>
+        )}
+        <div className="flex items-center gap-4 flex-wrap z-20">
             <div className="text-left">
-                <h2 className="text-xl font-semibold">Processing Complete</h2>
-                <p className="text-sm text-gray-400">Review the final aligned results below.</p>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                    {isProcessing ? (
+                        <>
+                           <Spinner className="w-5 h-5" />
+                           <span className="text-cyan-300 animate-pulse">Generating Variations...</span>
+                        </>
+                    ) : (
+                        "Processing Complete"
+                    )}
+                </h2>
+                <p className="text-sm text-gray-400">
+                    {isProcessing ? (processingStatus || "Please wait...") : "Review the final aligned results below."}
+                </p>
             </div>
              <button 
                 onClick={onBackToSelection}
-                className="px-3 py-2 text-sm font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-500 transition-colors flex items-center gap-2"
+                disabled={isProcessing}
+                className="px-3 py-2 text-sm font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-500 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Go back to change master or other settings"
             >
                 <ChevronLeftIcon className="w-5 h-5" />

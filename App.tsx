@@ -24,7 +24,7 @@ import { fileToBase64 } from './utils/fileUtils';
 
 declare var JSZip: any;
 
-const AI_PROMPT_BASE = "Generate a hyper-realistic image where the logo matches the reference EXACTLY 1:1. CRITICAL: The outlines, text, and graphics of the logo must remain completely unchanged. The logo must appear perfectly flat, frontal, and undistorted. Do not apply any 3D perspective or warping to the logo. Change ONLY the background, texture, or surface area *outside* and *around* the logo. The goal is to place the identical, flat logo into a new context without modifying the logo itself. PHOTOGRAPHY STYLE: 150mm telephoto lens, super close-up macro. The image should NOT look too perfect or polished. Add realistic imperfections, slight motion blur, camera shake, or odd angles to the background elements to make it feel authentic and raw. Match the contrast, lighting, and saturation of the original logo reference to ensure they belong in the same scene.";
+const AI_PROMPT_BASE = "Generate a hyper-realistic image where the logo is PHYSICALLY EMBEDDED into the surface material. CRITICAL: The logo must NOT look like a flat sticker or overlay. It must inherit the surface texture (bumps, grain, weave, fibers) and react to the scene's lighting (casting slight shadows if embossed, or receiving shadows/highlights). While the geometric outlines and text must remain EXACTLY 1:1 matches to the reference, the MATERIALITY must match the environment. COMPOSITION: Do NOT copy the composition of the reference image. Create a completely NEW angle, perspective, and framing. PHOTOGRAPHY STYLE: 150mm telephoto lens, super close-up macro. Raw, authentic, unpolished. Add realistic imperfections, motion blur, and weird angles.";
 
 const DEFAULT_PROMPT_SNIPPETS: string[] = [
     'a storefront',
@@ -583,6 +583,9 @@ export default function App() {
                 
                 for (let i = 0; i < numVariations; i++) {
                     setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variation ${i + 1}/${numVariations}...`);
+                    const startTime = performance.now();
+                    console.time(`Generate Variation ${i + 1}`);
+                    
                     try {
                         const randomSnippet = selectedSnippets[Math.floor(Math.random() * selectedSnippets.length)];
                         let fullPrompt = `${AI_PROMPT_BASE} The new scene should be: ${randomSnippet}.`;
@@ -613,12 +616,17 @@ export default function App() {
                             );
                             const variationId = `ai-var-${Date.now()}-${i}`;
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });
+                            // Update state immediately to show result in Previewer
                             setProcessedFiles([...finalResults]);
                         }
                     } catch (err) {
                         console.error("Error generating AI variation:", err);
                         const friendlyError = getFriendlyErrorMessage(err, `AI Variation ${i + 1}`);
                         setError(prev => (prev ? prev + ' | ' : '') + friendlyError);
+                    } finally {
+                        console.timeEnd(`Generate Variation ${i + 1}`);
+                        const duration = (performance.now() - startTime) / 1000;
+                        console.log(`Variation ${i + 1} took ${duration.toFixed(2)}s`);
                     }
                     stepsCompleted++;
                     setProcessingProgress((stepsCompleted / totalSteps) * 100);
@@ -679,18 +687,18 @@ export default function App() {
             </div>
         )}
 
-        {cvReady && isProcessing && (
+        {cvReady && isProcessing && processedFiles.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center p-8">
             <Spinner />
             <p className="text-xl font-semibold mt-4 text-cyan-300">{processingStatus}</p>
             <div className="w-64 mt-4 bg-gray-700 rounded-full h-2.5">
-              <div className="bg-cyan-400 h-2.5 rounded-full" style={{ width: `${processingProgress}%` }}></div>
+              <div className="bg-cyan-400 h-2.5 rounded-full transition-all duration-300 ease-out" style={{ width: `${processingProgress}%` }}></div>
             </div>
             <p className="text-sm text-gray-400 mt-2">{Math.round(processingProgress)}%</p>
           </div>
         )}
         
-        {cvReady && !isProcessing && processedFiles.length > 0 && (
+        {cvReady && processedFiles.length > 0 && (
             <Previewer 
                 files={processedFiles}
                 originalFiles={uploadedFiles}
@@ -705,6 +713,9 @@ export default function App() {
                 fixingImageId={fixingImageId}
                 onExport={handleExport}
                 isExporting={isExporting}
+                isProcessing={isProcessing}
+                processingStatus={processingStatus}
+                processingProgress={processingProgress}
             />
         )}
         
