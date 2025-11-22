@@ -656,6 +656,7 @@ export default function App() {
                     
                     await yieldToMain();
                 }
+            }
 
             setProcessedFiles(finalResults);
             setProcessingStatus('Processing complete!');
