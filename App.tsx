@@ -446,12 +446,12 @@ export default function App() {
 
         const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
 
-        // Start real-time elapsed timer (updates every second)
+        // Start real-time elapsed timer (updates frequently for accurate countdown)
         const elapsedStartTime = performance.now();
         const elapsedTimer = setInterval(() => {
             const elapsed = Math.floor((performance.now() - elapsedStartTime) / 1000);
             setElapsedTime(elapsed);
-        }, 1000);
+        }, 100); // Update every 100ms to ensure smooth second transitions
 
         setTimeout(async () => {
             const masterFile = uploadedFiles.find(f => f.id === masterFileId);
@@ -477,7 +477,7 @@ export default function App() {
             let currentStage = 1;
 
             // Start smooth progress simulation for local alignment (stages 1-4)
-            const TIME_PER_LOCAL_ALIGNMENT = 0.6; // 2x faster than actual processing time
+            const TIME_PER_LOCAL_ALIGNMENT = 0.2; // Fast progress bar (much faster than actual processing)
             const totalLocalTime = totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT;
             const localStartTime = performance.now();
             let currentLocalProgress = 0;
