@@ -162,8 +162,8 @@ const performRobustAlignment = (
         clahe.apply(baseGray, baseGray);
         clahe.apply(targetGray, targetGray);
         
-        // Use AKAZE with more features for better partial matching
-        akaze = new cv.AKAZE(cv.AKAZE_DESCRIPTOR_MLDB, 0, 3, 0.0005); // Lower threshold = more features
+        // Use AKAZE with default parameters (OpenCV.js 4.9.0 compatibility)
+        akaze = new cv.AKAZE();
         const bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
 
         const descriptorsBase = new cv.Mat(); mats.push(descriptorsBase);
