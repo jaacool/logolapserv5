@@ -767,12 +767,19 @@ export const selectBestMaster = async (
 
         console.log('Center scores:', imageFeatures.map(f => `Image ${f.index}: ${f.centerScore.toFixed(3)}`).join(', '));
 
-        // Step 2: Calculate similarity scores (average match quality with all other images)
+        // Step 2: Calculate similarity scores - maximize match success probability
+        // We want the master that will successfully align with ALL images, not just have many matches
+        interface MatchQuality {
+            count: number;           // Number of good matches
+            avgDistance: number;     // Average match distance (lower = better)
+            minDistance: number;     // Best match distance
+        }
+
         const similarityScores: number[] = new Array(images.length).fill(0);
 
         for (let i = 0; i < imageFeatures.length; i++) {
-            let totalMatches = 0;
-            let totalQuality = 0;
+            const matchQualities: MatchQuality[] = [];
+            let totalFeatureDensity = 0;
 
             for (let j = 0; j < imageFeatures.length; j++) {
                 if (i === j) continue;
@@ -786,29 +793,80 @@ export const selectBestMaster = async (
                 bf.knnMatch(desc1, desc2, matches, 2);
 
                 let goodMatches = 0;
+                let totalDistance = 0;
+                let minDistance = Infinity;
+
                 for (let k = 0; k < matches.size(); k++) {
                     const match = matches.get(k);
                     if (match.size() > 1) {
-                        if (match.get(0).distance < 0.75 * match.get(1).distance) {
+                        const dist0 = match.get(0).distance;
+                        const dist1 = match.get(1).distance;
+                        const ratio = dist0 / dist1;
+                        
+                        if (ratio < 0.75) {
                             goodMatches++;
+                            totalDistance += dist0;
+                            minDistance = Math.min(minDistance, dist0);
                         }
                     }
                 }
 
                 matches.delete();
-                totalMatches += goodMatches;
+
+                if (goodMatches > 0) {
+                    matchQualities.push({
+                        count: goodMatches,
+                        avgDistance: totalDistance / goodMatches,
+                        minDistance: minDistance
+                    });
+                }
+
+                // Feature density: more features = more robust matching
+                totalFeatureDensity += imageFeatures[j].keypoints.size();
             }
 
-            // Normalize by number of comparisons
-            const avgMatches = totalMatches / Math.max(1, imageFeatures.length - 1);
-            similarityScores[i] = avgMatches;
+            if (matchQualities.length === 0) {
+                similarityScores[i] = 0;
+                continue;
+            }
+
+            // Calculate comprehensive similarity score
+            // 1. Minimum match count (worst case) - ensures it works with ALL images
+            const minMatchCount = Math.min(...matchQualities.map(q => q.count));
+            
+            // 2. Average match count
+            const avgMatchCount = matchQualities.reduce((sum, q) => sum + q.count, 0) / matchQualities.length;
+            
+            // 3. Match quality (lower distance = better)
+            const avgMatchDistance = matchQualities.reduce((sum, q) => sum + q.avgDistance, 0) / matchQualities.length;
+            const normalizedQuality = Math.max(0, 1 - avgMatchDistance / 100); // Normalize distance to 0-1
+            
+            // 4. Consistency (low variance in match counts = more reliable)
+            const variance = matchQualities.reduce((sum, q) => sum + Math.pow(q.count - avgMatchCount, 2), 0) / matchQualities.length;
+            const consistency = 1 / (1 + variance / avgMatchCount); // 0-1, higher = more consistent
+            
+            // 5. Feature density (normalized)
+            const avgFeatureDensity = totalFeatureDensity / Math.max(1, imageFeatures.length - 1);
+            const normalizedDensity = Math.min(1, avgFeatureDensity / 500); // Assume 500 features is "good"
+
+            // Combined similarity score with emphasis on reliability
+            // Prioritize: worst-case performance (50%), quality (20%), consistency (15%), average (10%), density (5%)
+            similarityScores[i] = 
+                minMatchCount * 0.50 +           // Worst case must be good
+                avgMatchCount * 0.10 +           // Average should be high
+                normalizedQuality * 100 * 0.20 + // Match quality matters
+                consistency * 100 * 0.15 +       // Consistency is important
+                normalizedDensity * 100 * 0.05;  // Feature density helps
+
+            console.log(`Image ${i}: min=${minMatchCount}, avg=${avgMatchCount.toFixed(1)}, quality=${normalizedQuality.toFixed(2)}, consistency=${consistency.toFixed(2)}, density=${normalizedDensity.toFixed(2)}, score=${similarityScores[i].toFixed(1)}`);
         }
 
-        console.log('Similarity scores:', similarityScores.map((s, i) => `Image ${i}: ${s.toFixed(1)} matches`).join(', '));
+        console.log('Similarity scores:', similarityScores.map((s, i) => `Image ${i}: ${s.toFixed(1)}`).join(', '));
 
-        // Step 3: Combine scores (weighted: 40% centering, 60% similarity)
-        const CENTERING_WEIGHT = 0.4;
-        const SIMILARITY_WEIGHT = 0.6;
+        // Step 3: Combine scores (weighted: 30% centering, 70% similarity)
+        // Similarity is more important for successful alignment
+        const CENTERING_WEIGHT = 0.3;
+        const SIMILARITY_WEIGHT = 0.7;
 
         // Normalize similarity scores to 0-1 range
         const maxSimilarity = Math.max(...similarityScores);
