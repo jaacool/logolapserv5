@@ -262,29 +262,87 @@ const performRobustAlignment = (
         const matBasePts = cv.matFromArray(basePts.length / 2, 1, cv.CV_32FC2, basePts); mats.push(matBasePts);
         const matTargetPts = cv.matFromArray(targetPts.length / 2, 1, cv.CV_32FC2, targetPts); mats.push(matTargetPts);
 
+        // Auto-select best algorithm based on transformation quality
         let transformMatrix: any;
+        let selectedAlgorithm = "unknown";
+        
         if (usePerspectiveCorrection) {
-            // Robust perspective estimation with adaptive RANSAC
-            const mask = new cv.Mat(); mats.push(mask);
-            transformMatrix = cv.findHomography(matTargetPts, matBasePts, cv.RANSAC, RANSAC_THRESHOLD, mask);
+            // Test both perspective and affine, choose the best one
+            const maskHomography = new cv.Mat(); mats.push(maskHomography);
+            const homographyMatrix = cv.findHomography(matTargetPts, matBasePts, cv.RANSAC, RANSAC_THRESHOLD, maskHomography);
             
-            if (transformMatrix.empty()) {
-                console.warn("Homography failed, falling back to affine transform.");
-                transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
-            } else {
-                // Count inliers
+            const maskAffine = new cv.Mat(); mats.push(maskAffine);
+            const affineMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, maskAffine, cv.RANSAC, RANSAC_THRESHOLD);
+            
+            let homographyScore = 0;
+            let affineScore = 0;
+            
+            // Calculate homography quality
+            if (!homographyMatrix.empty()) {
                 let inlierCount = 0;
-                for (let i = 0; i < mask.rows; i++) {
-                    if (mask.ucharAt(i, 0) > 0) inlierCount++;
+                for (let i = 0; i < maskHomography.rows; i++) {
+                    if (maskHomography.ucharAt(i, 0) > 0) inlierCount++;
                 }
                 const inlierRatio = inlierCount / goodMatches.length;
-                console.log(`Homography inliers: ${inlierCount}/${goodMatches.length} (${(inlierRatio * 100).toFixed(1)}%)`);
                 
-                // If too few inliers, fallback to affine
-                if (inlierRatio < 0.3) {
-                    console.warn("Low inlier ratio, falling back to affine transform.");
-                    transformMatrix.delete();
-                    transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
+                // Check for perspective distortion (should be close to affine for partial logos)
+                const h00 = homographyMatrix.doubleAt(0, 0);
+                const h11 = homographyMatrix.doubleAt(1, 1);
+                const h20 = homographyMatrix.doubleAt(2, 0);
+                const h21 = homographyMatrix.doubleAt(2, 1);
+                const perspectiveDistortion = Math.abs(h20) + Math.abs(h21);
+                
+                // Score: high inliers + low perspective distortion = good
+                homographyScore = inlierRatio * (1.0 - Math.min(perspectiveDistortion * 10, 0.5));
+                
+                console.log(`Homography: ${inlierCount}/${goodMatches.length} inliers (${(inlierRatio * 100).toFixed(1)}%), distortion: ${perspectiveDistortion.toFixed(4)}, score: ${homographyScore.toFixed(3)}`);
+            }
+            
+            // Calculate affine quality
+            if (!affineMatrix.empty()) {
+                let inlierCount = 0;
+                for (let i = 0; i < maskAffine.rows; i++) {
+                    if (maskAffine.ucharAt(i, 0) > 0) inlierCount++;
+                }
+                const inlierRatio = inlierCount / goodMatches.length;
+                
+                // Check for uniform scaling (good for partial logos)
+                const a = affineMatrix.doubleAt(0, 0);
+                const b = affineMatrix.doubleAt(0, 1);
+                const d = affineMatrix.doubleAt(1, 0);
+                const e = affineMatrix.doubleAt(1, 1);
+                const scaleX = Math.sqrt(a * a + b * b);
+                const scaleY = Math.sqrt(d * d + e * e);
+                const scaleUniformity = 1.0 - Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY);
+                
+                // Score: high inliers + uniform scaling = good for partial logos
+                affineScore = inlierRatio * (0.8 + 0.2 * scaleUniformity);
+                
+                console.log(`Affine: ${inlierCount}/${goodMatches.length} inliers (${(inlierRatio * 100).toFixed(1)}%), scale uniformity: ${scaleUniformity.toFixed(3)}, score: ${affineScore.toFixed(3)}`);
+            }
+            
+            // Auto-select best algorithm
+            if (homographyScore > affineScore && homographyScore > 0.3) {
+                transformMatrix = homographyMatrix;
+                if (!affineMatrix.empty()) affineMatrix.delete();
+                selectedAlgorithm = "perspective";
+                console.log(`✓ Auto-selected: PERSPECTIVE (score: ${homographyScore.toFixed(3)})`);
+            } else if (affineScore > 0.2) {
+                transformMatrix = affineMatrix;
+                if (!homographyMatrix.empty()) homographyMatrix.delete();
+                selectedAlgorithm = "affine";
+                console.log(`✓ Auto-selected: AFFINE (score: ${affineScore.toFixed(3)}) - Better for partial logo matching`);
+            } else {
+                // Both scores low, try homography as fallback
+                if (!homographyMatrix.empty()) {
+                    transformMatrix = homographyMatrix;
+                    if (!affineMatrix.empty()) affineMatrix.delete();
+                    selectedAlgorithm = "perspective-fallback";
+                    console.warn("Low scores, using perspective as fallback");
+                } else {
+                    transformMatrix = affineMatrix;
+                    selectedAlgorithm = "affine-fallback";
+                    console.warn("Low scores, using affine as fallback");
                 }
             }
         } else {
@@ -298,6 +356,7 @@ const performRobustAlignment = (
                     if (mask.ucharAt(i, 0) > 0) inlierCount++;
                 }
                 console.log(`Affine inliers: ${inlierCount}/${goodMatches.length}`);
+                selectedAlgorithm = "affine-only";
             }
         }
         
