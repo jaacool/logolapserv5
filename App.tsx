@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate, selectBestMaster } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -87,7 +87,6 @@ export default function App() {
   const [apiKey, setApiKey] = useState<string>('');
   const [projectContext, setProjectContext] = useState<string>('');
   const [contextImageFile, setContextImageFile] = useState<File | null>(null);
-  const [isAutoSelectingMaster, setIsAutoSelectingMaster] = useState<boolean>(false);
   
   const totalEstimatedTimeSecRef = useRef(0);
   
@@ -206,29 +205,6 @@ export default function App() {
       )
     );
   }, []);
-
-  const handleAutoSelectMaster = useCallback(async () => {
-    if (uploadedFiles.length <= 1) return;
-    
-    setIsAutoSelectingMaster(true);
-    setError(null);
-    
-    try {
-      const imageElements = uploadedFiles.map(f => f.imageElement);
-      const bestIndex = await selectBestMaster(imageElements);
-      const bestFile = uploadedFiles[bestIndex];
-      
-      if (bestFile) {
-        handleSelectMaster(bestFile.id);
-        console.log(`Auto-selected master: ${bestFile.file.name} (index ${bestIndex})`);
-      }
-    } catch (err) {
-      console.error('Auto master selection failed:', err);
-      setError('Auto master selection failed. Please select manually.');
-    } finally {
-      setIsAutoSelectingMaster(false);
-    }
-  }, [uploadedFiles, handleSelectMaster]);
 
   const handleBackToSelection = useCallback(() => {
     setProcessedFiles([]);
@@ -957,8 +933,6 @@ export default function App() {
                                 onSelectMaster={handleSelectMaster} 
                                 onToggleSimpleMatch={handleToggleSimpleMatch}
                                 onDelete={handleDeleteUploadedFile}
-                                onAutoSelectMaster={handleAutoSelectMaster}
-                                isAutoSelecting={isAutoSelectingMaster}
                             />
                         )}
                     </div>
