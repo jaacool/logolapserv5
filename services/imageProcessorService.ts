@@ -247,57 +247,66 @@ const performRobustAlignment = (
             throw new Error(`Not enough good matches found for alignment - ${goodMatches.length}/${MIN_MATCH_COUNT}.`);
         }
 
-        // Center-weighted matching: When multiple logos exist, prefer the one closest to center
-        // This helps when there's a logo wall or multiple logo variations in one image
-        // Activate earlier (12+ matches) for better multi-logo detection
-        if (goodMatches.length >= MIN_MATCH_COUNT * 1.5) {
-            const imageCenterX = targetMat.cols / 2;
-            const imageCenterY = targetMat.rows / 2;
+        // SPATIAL DISTRIBUTION SCORING: Prioritize matches that cover large areas
+        // Logos often have large uniform areas and small detailed elements
+        // Small elements have more features but large areas are more important for alignment
+        
+        const imageCenterX = targetMat.cols / 2;
+        const imageCenterY = targetMat.rows / 2;
+        
+        // Calculate spatial distribution score for each match
+        const matchesWithScores = goodMatches.map(match => {
+            const pt = keypointsTarget.get(match.queryIdx).pt;
+            const distanceToCenter = Math.sqrt(
+                Math.pow(pt.x - imageCenterX, 2) + 
+                Math.pow(pt.y - imageCenterY, 2)
+            );
             
-            // Calculate centroid of each match's position in target image
-            const matchesWithCenterDistance = goodMatches.map(match => {
-                const pt = keypointsTarget.get(match.queryIdx).pt;
-                const distanceToCenter = Math.sqrt(
-                    Math.pow(pt.x - imageCenterX, 2) + 
-                    Math.pow(pt.y - imageCenterY, 2)
+            // Calculate how spread out this match is from others (spatial coverage)
+            let minDistanceToOthers = Infinity;
+            for (let i = 0; i < Math.min(goodMatches.length, 50); i++) {
+                if (goodMatches[i] === match) continue;
+                const otherPt = keypointsTarget.get(goodMatches[i].queryIdx).pt;
+                const dist = Math.sqrt(
+                    Math.pow(pt.x - otherPt.x, 2) + 
+                    Math.pow(pt.y - otherPt.y, 2)
                 );
-                return { match, distanceToCenter, pt };
-            });
+                minDistanceToOthers = Math.min(minDistanceToOthers, dist);
+            }
             
-            // Sort by center distance to find the central cluster
-            matchesWithCenterDistance.sort((a, b) => a.distanceToCenter - b.distanceToCenter);
+            // Score components:
+            // 1. Match quality (lower distance = better)
+            const qualityScore = 1 / (1 + match.distance);
             
-            // Take matches from the central region (top 40% closest to center for stronger centering)
-            const centralMatchCount = Math.max(
-                MIN_MATCH_COUNT,
-                Math.floor(matchesWithCenterDistance.length * 0.4)
-            );
-            const centralMatches = matchesWithCenterDistance
-                .slice(0, centralMatchCount)
-                .map(item => item.match);
+            // 2. Spatial spread (matches far from others = better coverage of large areas)
+            // Normalize by image diagonal
+            const imageDiagonal = Math.sqrt(targetMat.cols * targetMat.cols + targetMat.rows * targetMat.rows);
+            const spreadScore = Math.min(1, minDistanceToOthers / (imageDiagonal * 0.2));
             
-            // Calculate average position of central matches to verify cluster coherence
-            const avgX = matchesWithCenterDistance.slice(0, centralMatchCount)
-                .reduce((sum, item) => sum + item.pt.x, 0) / centralMatchCount;
-            const avgY = matchesWithCenterDistance.slice(0, centralMatchCount)
-                .reduce((sum, item) => sum + item.pt.y, 0) / centralMatchCount;
-            const clusterCenterDist = Math.sqrt(
-                Math.pow(avgX - imageCenterX, 2) + 
-                Math.pow(avgY - imageCenterY, 2)
-            );
+            // 3. Center proximity (for multi-logo scenarios)
+            const centerScore = 1 - Math.min(1, distanceToCenter / (imageDiagonal * 0.5));
             
-            // Now sort these central matches by quality (distance)
-            centralMatches.sort((a, b) => a.distance - b.distance);
-            const topMatchCount = Math.min(centralMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
-            goodMatches = centralMatches.slice(0, topMatchCount);
+            // Combined score: 30% quality, 50% spatial spread, 20% center
+            // Spatial spread is most important to cover large logo areas
+            const combinedScore = qualityScore * 0.3 + spreadScore * 0.5 + centerScore * 0.2;
             
-            console.log(`Center-weighted matching: Selected ${goodMatches.length} matches from central region (cluster center: ${clusterCenterDist.toFixed(0)}px from image center)`);
-        } else {
-            // Standard approach: Sort matches by distance and keep only the best ones
-            goodMatches.sort((a, b) => a.distance - b.distance);
-            const topMatchCount = Math.min(goodMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
-            goodMatches = goodMatches.slice(0, topMatchCount);
-        }
+            return { match, combinedScore, spreadScore, qualityScore, centerScore, pt, distanceToCenter };
+        });
+        
+        // Sort by combined score (best coverage of large areas first)
+        matchesWithScores.sort((a, b) => b.combinedScore - a.combinedScore);
+        
+        // Select top matches that maximize spatial coverage
+        const topMatchCount = Math.min(matchesWithScores.length, Math.max(MIN_MATCH_COUNT * 2, 30));
+        goodMatches = matchesWithScores.slice(0, topMatchCount).map(item => item.match);
+        
+        // Calculate coverage statistics
+        const avgSpread = matchesWithScores.slice(0, topMatchCount)
+            .reduce((sum, item) => sum + item.spreadScore, 0) / topMatchCount;
+        const avgCenterDist = matchesWithScores.slice(0, topMatchCount)
+            .reduce((sum, item) => sum + item.distanceToCenter, 0) / topMatchCount;
+        
+        console.log(`Spatial distribution matching: Selected ${goodMatches.length} matches (avg spread: ${avgSpread.toFixed(2)}, avg center dist: ${avgCenterDist.toFixed(0)}px)`);
 
         let basePts = [];
         let targetPts = [];
