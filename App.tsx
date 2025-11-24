@@ -1,19 +1,17 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
 import { processImageLocally, refineWithGoldenTemplate } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
+import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
 import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon } from './components/Icons';
 import { Spinner } from './components/Spinner';
 import { DebugToggle } from './components/DebugToggle';
-import { GreedyModeToggle } from './components/GreedyModeToggle';
-import { RefinementToggle } from './components/RefinementToggle';
-import { EnsembleCorrectionToggle } from './components/EnsembleCorrectionToggle';
-import { PerspectiveCorrectionToggle } from './components/PerspectiveCorrectionToggle';
-import { SimpleMatchToggle } from './components/SimpleMatchToggle';
+import { StabilitySlider } from './components/StabilitySlider';
+import { AIEdgeFillToggle } from './components/AIEdgeFillToggle';
 import { AspectRatioSelector } from './components/AspectRatioSelector';
 import { AIVariationsToggle } from './components/AIVariationsToggle';
 import { VariationSelector } from './components/VariationSelector';
@@ -68,9 +66,13 @@ export default function App() {
   const [elapsedTime, setElapsedTime] = useState(0); // Track actual elapsed time in seconds
   const [cvReady, setCvReady] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
-  const [isGreedyMode, setIsGreedyMode] = useState(false);
-  const [isRefinementEnabled, setIsRefinementEnabled] = useState(true);
-  const [isEnsembleCorrectionEnabled, setIsEnsembleCorrectionEnabled] = useState(true);
+  const [stabilityLevel, setStabilityLevel] = useState<number>(3); // 1=P, 2=P+I, 3=P+I+E
+  // Greedy mode is always disabled but kept for future use
+  const isGreedyMode = false;
+  // Derived states from stabilityLevel
+  const isRefinementEnabled = stabilityLevel >= 2;
+  const isEnsembleCorrectionEnabled = stabilityLevel >= 3;
+  const [isAiEdgeFillEnabled, setIsAiEdgeFillEnabled] = useState(false);
   const [isAiVariationsEnabled, setIsAiVariationsEnabled] = useState(false);
   const [isSimpleMatchEnabled, setIsSimpleMatchEnabled] = useState(false);
   const [numVariations, setNumVariations] = useState<number>(1);
@@ -81,6 +83,8 @@ export default function App() {
   const [apiKey, setApiKey] = useState<string>('');
   const [projectContext, setProjectContext] = useState<string>('');
   const [contextImageFile, setContextImageFile] = useState<File | null>(null);
+  
+  const totalEstimatedTimeSecRef = useRef(0);
   
   useEffect(() => {
     const checkCv = () => {
@@ -150,7 +154,7 @@ export default function App() {
         if (file.id === masterFileId) {
           // Alter Master: Vorherigen Zustand wiederherstellen
           const previousState = newPreviousStates.get(file.id);
-          if (previousState) {
+          if (previousState && typeof previousState === 'object') {
             return { ...file, ...previousState };
           }
         }
@@ -184,61 +188,20 @@ export default function App() {
     setUploadedFiles(prev => [...prev, ...newFiles]);
   }, []);
 
-  const handleTogglePerspective = useCallback((fileId: string) => {
-    setUploadedFiles(prevFiles => 
-      prevFiles.map(file => 
-        file.id === fileId 
-          ? { ...file, needsPerspectiveCorrection: !file.needsPerspectiveCorrection, needsSimpleMatch: false } 
-          : file
-      )
-    );
-  }, []);
-
   const handleToggleSimpleMatch = useCallback((fileId: string) => {
     setUploadedFiles(prevFiles => 
       prevFiles.map(file => 
         file.id === fileId 
-          ? { ...file, needsSimpleMatch: !file.needsSimpleMatch, needsPerspectiveCorrection: false } 
+          ? { 
+              ...file, 
+              needsSimpleMatch: !file.needsSimpleMatch, 
+              needsPerspectiveCorrection: file.needsSimpleMatch // If turning off simple match, turn on perspective
+            } 
           : file
       )
     );
   }, []);
 
-  const allNonMasterFilesNeedPerspective = useMemo(() => {
-    const nonMasterFiles = uploadedFiles.filter(f => f.id !== masterFileId);
-    if (nonMasterFiles.length === 0) {
-        return false;
-    }
-    return nonMasterFiles.every(f => f.needsPerspectiveCorrection);
-  }, [uploadedFiles, masterFileId]);
-
-  const allNonMasterFilesNeedSimpleMatch = useMemo(() => {
-    const nonMasterFiles = uploadedFiles.filter(f => f.id !== masterFileId);
-    if (nonMasterFiles.length === 0) {
-        return false;
-    }
-    return nonMasterFiles.every(f => f.needsSimpleMatch);
-  }, [uploadedFiles, masterFileId]);
-
-  const handleToggleAllPerspective = useCallback((newValue: boolean) => {
-      setUploadedFiles(prevFiles =>
-          prevFiles.map(file =>
-              file.id !== masterFileId
-                  ? { ...file, needsPerspectiveCorrection: newValue, needsSimpleMatch: false }
-                  : file
-          )
-      );
-  }, [masterFileId]);
-
-  const handleToggleAllSimpleMatch = useCallback((newValue: boolean) => {
-      setUploadedFiles(prevFiles =>
-          prevFiles.map(file =>
-              file.id !== masterFileId
-                  ? { ...file, needsSimpleMatch: newValue, needsPerspectiveCorrection: false }
-                  : file
-          )
-      );
-  }, [masterFileId]);
 
   const handleBackToSelection = useCallback(() => {
     setProcessedFiles([]);
@@ -303,7 +266,7 @@ export default function App() {
 
         try {
             const perspectiveMasterElement = await dataUrlToImageElement(alignedMasterResult.processedUrl);
-            const { processedUrl, debugUrl } = await processImageLocally(
+            let { processedUrl, debugUrl } = await processImageLocally(
                 perspectiveMasterElement, 
                 targetFile.imageElement, 
                 isGreedyMode, 
@@ -311,8 +274,19 @@ export default function App() {
                 true, // Force perspective correction
                 false, // Simple match disabled for perspective correction
                 false, 
-                aspectRatio
+                aspectRatio,
+                isAiEdgeFillEnabled
             );
+
+            if (isAiEdgeFillEnabled && apiKey) {
+                try {
+                    processedUrl = await processWithNanobanana(processedUrl, apiKey);
+                } catch (fillErr) {
+                     console.error("AI Edge Fill failed during fix:", fillErr);
+                     setError(`Edge Fill failed: ${(fillErr as Error).message}`);
+                }
+            }
+
             setProcessedFiles(prev => prev.map(f => 
                 f.id === fileId ? { ...f, processedUrl, debugUrl } : f
             ));
@@ -321,7 +295,7 @@ export default function App() {
         } finally {
             setFixingImageId(null);
         }
-    }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio]);
+    }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio, isAiEdgeFillEnabled, apiKey]);
 
     const handleSimpleMatchFix = useCallback(async (fileId: string) => {
         const targetFile = uploadedFiles.find(f => f.id === fileId);
@@ -336,7 +310,7 @@ export default function App() {
         setError(null);
 
         try {
-            const { processedUrl, debugUrl } = await processImageLocally(
+            let { processedUrl, debugUrl } = await processImageLocally(
                 masterFile.imageElement, 
                 targetFile.imageElement, 
                 isGreedyMode, 
@@ -344,8 +318,10 @@ export default function App() {
                 false, // No perspective correction
                 true, // Force simple match
                 false, 
-                aspectRatio
+                aspectRatio,
+                isAiEdgeFillEnabled
             );
+
             
             // Apply ensemble correction if enabled and we have other processed files
             if (isEnsembleCorrectionEnabled && processedFiles.length > 1) {
@@ -353,35 +329,33 @@ export default function App() {
                 if (masterResult) {
                     try {
                         const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
-                        const refinedUrl = await refineWithGoldenTemplate(processedUrl, goldenTemplateElement);
-                        setProcessedFiles(prev => prev.map(f => 
-                            f.id === fileId ? { ...f, processedUrl: refinedUrl, debugUrl } : f
-                        ));
+                        const refinedUrl = await refineWithGoldenTemplate(processedUrl, goldenTemplateElement, isAiEdgeFillEnabled);
+                        processedUrl = refinedUrl; // Update processedUrl with refined version
                     } catch (err) {
                         console.error("Error during ensemble refinement for simple match:", err);
-                        // Fall back to simple match result without refinement
-                        setProcessedFiles(prev => prev.map(f => 
-                            f.id === fileId ? { ...f, processedUrl, debugUrl } : f
-                        ));
+                        // Keep existing processedUrl
                     }
-                } else {
-                    // No master result found, use simple match result
-                    setProcessedFiles(prev => prev.map(f => 
-                        f.id === fileId ? { ...f, processedUrl, debugUrl } : f
-                    ));
                 }
-            } else {
-                // No ensemble correction, use simple match result directly
-                setProcessedFiles(prev => prev.map(f => 
-                    f.id === fileId ? { ...f, processedUrl, debugUrl } : f
-                ));
             }
+
+            if (isAiEdgeFillEnabled && apiKey) {
+                try {
+                    processedUrl = await processWithNanobanana(processedUrl, apiKey);
+                } catch (fillErr) {
+                     console.error("AI Edge Fill failed during fix:", fillErr);
+                     setError(`Edge Fill failed: ${(fillErr as Error).message}`);
+                }
+            }
+
+            setProcessedFiles(prev => prev.map(f => 
+                f.id === fileId ? { ...f, processedUrl, debugUrl } : f
+            ));
         } catch (err) {
             setError(getFriendlyErrorMessage(err, targetFile.file.name));
         } finally {
             setFixingImageId(null);
         }
-    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio]);
+    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio, isAiEdgeFillEnabled, apiKey]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
@@ -425,15 +399,29 @@ export default function App() {
         } finally {
           setIsExporting(false);
         }
-      }, [processedFiles, masterFileId]);
+    }, [processedFiles, masterFileId]);
 
-    const handleProcessImages = useCallback(async () => {
+  // Calculate estimated remaining time string
+  const estimatedTimeRemaining = useMemo(() => {
+      if (!isProcessing || processingProgress >= 100 || totalEstimatedTimeSecRef.current <= 0) return null;
+      const remainingSec = Math.max(0, totalEstimatedTimeSecRef.current - elapsedTime);
+      if (remainingSec <= 0) return "Almost done...";
+      if (remainingSec < 60) return `${Math.ceil(remainingSec)}s remaining`;
+      const mins = Math.ceil(remainingSec / 60);
+      return `~${mins}m remaining`;
+  }, [isProcessing, processingProgress, elapsedTime]);
+
+  const handleProcessImages = useCallback(async () => {
         if (!masterFileId || uploadedFiles.length < 1) {
             setError("Please select a master image and upload at least one other image.");
             return;
         }
         if (isAiVariationsEnabled && !apiKey) {
             setError("Please enter your Google AI API key to generate variations.");
+            return;
+        }
+        if (isAiEdgeFillEnabled && !apiKey) {
+            setError("Please enter your Google AI API key (Nanobanana) to perform AI Edge Fill.");
             return;
         }
 
@@ -446,12 +434,37 @@ export default function App() {
 
         const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
 
-        // Start real-time elapsed timer (updates frequently for accurate countdown)
+        // Estimate total time for the whole pipeline (local + optional AI)
+        const REAL_TIME_PER_LOCAL_ALIGNMENT = 1.2; // seconds per local image
+        const REAL_TIME_PER_AI_FILL = 18.0; // Estimate for Nanobanana
+        const REAL_TIME_PER_AI_GENERATION = 17.0;   // seconds per AI variation
+
+        let totalEstimatedTimeSec = uploadedFiles.length * REAL_TIME_PER_LOCAL_ALIGNMENT;
+        if (isAiEdgeFillEnabled) {
+            totalEstimatedTimeSec += uploadedFiles.length * REAL_TIME_PER_AI_FILL;
+        }
+        if (isAiVariationsEnabled) {
+            totalEstimatedTimeSec += numVariations * REAL_TIME_PER_AI_GENERATION;
+        }
+        if (totalEstimatedTimeSec <= 0) {
+            totalEstimatedTimeSec = 1; // safety to avoid division by zero
+        }
+        totalEstimatedTimeSecRef.current = totalEstimatedTimeSec;
+
+        // Start real-time timer that drives both countdown (1 fps) and a very smooth progress (~30 fps)
         const elapsedStartTime = performance.now();
-        const elapsedTimer = setInterval(() => {
-            const elapsed = Math.floor((performance.now() - elapsedStartTime) / 1000);
-            setElapsedTime(elapsed);
-        }, 100); // Update every 100ms to ensure smooth second transitions
+        const progressTimer = setInterval(() => {
+            const elapsedSeconds = (performance.now() - elapsedStartTime) / 1000;
+
+            // 1) Update elapsedTime in echten Sekunden (1 fps)
+            const wholeSeconds = Math.floor(elapsedSeconds);
+            setElapsedTime(prev => (wholeSeconds > prev ? wholeSeconds : prev));
+
+            // 2) Update Progress: direkt aus der Zeit (0 -> 100% linear über totalEstimatedTimeSec)
+            const targetFraction = Math.min(1, elapsedSeconds / totalEstimatedTimeSec);
+            const targetPercent = targetFraction * 100;
+            setProcessingProgress(targetPercent);
+        }, 33); // ~30 fps, sehr flüssige Animation
 
         setTimeout(async () => {
             const masterFile = uploadedFiles.find(f => f.id === masterFileId);
@@ -464,37 +477,32 @@ export default function App() {
             const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection && !f.needsSimpleMatch);
             const simpleMatchFiles = uploadedFiles.filter(f => f.needsSimpleMatch && f.id !== masterFileId);
             const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
-            const totalAlignmentFiles = standardFiles.length + simpleMatchFiles.length + perspectiveFiles.length;
             
-            // Progress allocation: if AI is enabled, 20% for local + 80% for AI, otherwise 100% for local
-            const LOCAL_PROGRESS_ALLOCATION = isAiVariationsEnabled ? 20 : 100;
-            const AI_PROGRESS_ALLOCATION = isAiVariationsEnabled ? 80 : 0;
-            let filesProcessed = 0;
+            // Calculate total stages dynamically based on enabled features and file counts
+            const hasStandardFiles = standardFiles.length > 0;
+            const hasSimpleMatchFiles = simpleMatchFiles.length > 0;
+            const hasPerspectiveFiles = perspectiveFiles.length > 0;
+            const willRunEnsemble = isEnsembleCorrectionEnabled && uploadedFiles.length > 1; // Estimate
+            const willRunEdgeFill = isAiEdgeFillEnabled && apiKey;
+            const willRunAI = isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey;
 
-            const alignmentStages = 2 + (perspectiveFiles.length > 0 ? 1 : 0);
-            const generationStages = (isAiVariationsEnabled ? 1 : 0);
-            const totalStages = alignmentStages + generationStages;
+            // Always at least one stage for standard (or it skips but we count it as the base stage)
+            // Actually let's be precise:
+            // Stage 1: Standard (Always runs for standard files)
+            // Stage 2: Simple Match (Only if files exist)
+            // Stage 3: Ensemble (Only if enabled and likely needed)
+            // Stage 4: Perspective (Only if files exist)
+            // Stage 5: Edge Fill (Only if enabled)
+            // Stage 6: AI Variations (Only if enabled)
+            
+            let totalStages = 1; // Start with 1 for Standard
+            if (hasSimpleMatchFiles) totalStages++;
+            if (willRunEnsemble) totalStages++;
+            if (hasPerspectiveFiles) totalStages++;
+            if (willRunEdgeFill) totalStages++;
+            if (willRunAI) totalStages++;
+
             let currentStage = 1;
-
-            // Calculate total estimated time to synchronize progress bar with countdown
-            const TIME_PER_LOCAL_ALIGNMENT = 1.2; // Realistic processing time
-            const TIME_PER_AI_GENERATION = 17.0;
-            const totalEstimatedTime = (totalAlignmentFiles * TIME_PER_LOCAL_ALIGNMENT) + 
-                                        (isAiVariationsEnabled ? numVariations * TIME_PER_AI_GENERATION : 0);
-            
-            // Start global smooth progress simulation (0-100% based on total estimated time)
-            const globalStartTime = performance.now();
-            let currentProgress = 0;
-            const globalProgressInterval = setInterval(() => {
-                const elapsed = (performance.now() - globalStartTime) / 1000;
-                const targetProgress = Math.min(100, (elapsed / totalEstimatedTime) * 100);
-                
-                // Smooth increment: move towards target in small steps (~1% per 100ms)
-                if (currentProgress < targetProgress) {
-                    currentProgress = Math.min(targetProgress, currentProgress + 1);
-                }
-                setProcessingProgress(currentProgress);
-            }, 100);
 
             setProcessingStatus(`Stage ${currentStage}/${totalStages}: Aligning standard images...`);
             await yieldToMain();
@@ -502,51 +510,53 @@ export default function App() {
             let stage1Results: ProcessedFile[] = [];
             for (const targetFile of standardFiles) {
                 try {
-                    const { processedUrl, debugUrl } = await processImageLocally(
+                    let { processedUrl, debugUrl } = await processImageLocally(
                         masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                        false, isSimpleMatchEnabled, targetFile.id === masterFileId, aspectRatio
+                        false, isSimpleMatchEnabled, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled
                     );
+                    
                     stage1Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
                     setProcessedFiles([...stage1Results]);
                 } catch (err) {
                     console.error("Error processing standard file:", targetFile.file.name, err);
                     setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                 }
-                filesProcessed++;
                 await yieldToMain();
             }
-            currentStage++;
+            
+            if (hasSimpleMatchFiles) {
+                currentStage++;
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Processing simple match images...`);
+                await yieldToMain();
+            }
 
             // Process Simple Match files
             let stage2Results = stage1Results;
             if (simpleMatchFiles.length > 0) {
-                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Processing simple match images...`);
-                await yieldToMain();
-                
                 let simpleMatchResults: ProcessedFile[] = [];
                 for (const targetFile of simpleMatchFiles) {
                     try {
-                        const { processedUrl, debugUrl } = await processImageLocally(
+                        let { processedUrl, debugUrl } = await processImageLocally(
                             masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                            false, true, targetFile.id === masterFileId, aspectRatio
+                            false, true, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled
                         );
+
                         simpleMatchResults.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
                         setProcessedFiles([...stage1Results, ...simpleMatchResults]);
                     } catch (err) {
                         console.error("Error processing simple match file:", targetFile.file.name, err);
                         setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                     }
-                    filesProcessed++;
                     await yieldToMain();
                 }
                 stage2Results = [...stage1Results, ...simpleMatchResults];
             }
-            currentStage++;
-
-            if (isEnsembleCorrectionEnabled && stage2Results.length > 1) {
+            
+            if (willRunEnsemble && stage2Results.length > 1) {
+                currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying ensemble correction...`);
                 await yieldToMain();
-
+                
                 const masterResult = stage2Results.find(f => f.id === masterFileId);
                 if (masterResult) {
                     const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
@@ -554,7 +564,7 @@ export default function App() {
                     for (const file of stage2Results) {
                         if (file.id !== masterFileId) {
                             try {
-                                const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement);
+                                const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement, isAiEdgeFillEnabled);
                                 refinedResults.push({ ...file, processedUrl: refinedUrl });
                             } catch (err) {
                                 console.error("Error during ensemble refinement:", file.originalName, err);
@@ -568,10 +578,10 @@ export default function App() {
                     setProcessedFiles(stage2Results);
                 }
             }
-            currentStage++;
 
             let stage3Results = stage2Results;
             if (perspectiveFiles.length > 0) {
+                currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Aligning perspective images...`);
                 await yieldToMain();
                 
@@ -580,25 +590,53 @@ export default function App() {
                     const perspectiveMasterElement = await dataUrlToImageElement(masterResult.processedUrl);
                     for (const targetFile of perspectiveFiles) {
                          try {
-                            const { processedUrl, debugUrl } = await processImageLocally(
+                            let { processedUrl, debugUrl } = await processImageLocally(
                                 perspectiveMasterElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                                true, false, false, aspectRatio
+                                true, false, false, aspectRatio, isAiEdgeFillEnabled
                             );
+
                             stage3Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
                             setProcessedFiles([...stage3Results]);
                         } catch (err) {
                             console.error("Error processing perspective file:", targetFile.file.name, err);
                             setError(prev => (prev ? prev + ' | ' : '') + getFriendlyErrorMessage(err, targetFile.file.name));
                         }
-                        filesProcessed++;
                         await yieldToMain();
                     }
                 }
-                currentStage++;
             }
 
-            let finalResults = stage3Results;
+            let stage4Results = stage3Results;
+            if (willRunEdgeFill) {
+                currentStage++;
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Performing AI Edge Fill...`);
+                await yieldToMain();
+
+                let filledResults: ProcessedFile[] = [];
+                for (const file of stage4Results) {
+                    // Don't fill master if it didn't need processing? 
+                    // Actually processImageLocally processes master too (crops/pads).
+                    // So we should fill everything.
+                    try {
+                         const filledUrl = await processWithNanobanana(file.processedUrl, apiKey);
+                         filledResults.push({ ...file, processedUrl: filledUrl });
+                    } catch (fillErr) {
+                        console.error("AI Edge Fill failed for", file.originalName, fillErr);
+                        setError(prev => (prev ? prev + ' | ' : '') + `Edge Fill failed for ${file.originalName}: ${(fillErr as Error).message}`);
+                        filledResults.push(file);
+                    }
+                    // Update UI progressively? Or just wait for batch?
+                    // Let's update progressively so user sees progress
+                    setProcessedFiles([...filledResults, ...stage4Results.slice(filledResults.length)]);
+                    await yieldToMain();
+                }
+                stage4Results = filledResults;
+                setProcessedFiles(stage4Results);
+            }
+
+            let finalResults = stage4Results;
             if (isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey) {
+                currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variations...`);
                 await yieldToMain();
 
@@ -641,7 +679,7 @@ export default function App() {
                             const masterElementForAI = await dataUrlToImageElement(masterResult.processedUrl);
                             const { processedUrl, debugUrl } = await processImageLocally(
                                 masterElementForAI, variationImageElement, true, true,
-                                false, false, false, aspectRatio
+                                false, false, false, aspectRatio, isAiEdgeFillEnabled
                             );
                             const variationId = `ai-var-${Date.now()}-${i}`;
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });
@@ -661,8 +699,7 @@ export default function App() {
             }
 
             // Clear timers and snap to 100%
-            clearInterval(globalProgressInterval);
-            clearInterval(elapsedTimer);
+            clearInterval(progressTimer);
             setProcessingProgress(100);
             
             setProcessedFiles(finalResults);
@@ -676,29 +713,6 @@ export default function App() {
         aspectRatio, selectedSnippets, apiKey, contextImageFile
     ]);
     
-    // Calculate estimated time based on actual elapsed time
-    const estimatedTimeRemaining = useMemo(() => {
-        if (!isProcessing) return null;
-        
-        // Realistic processing times (in seconds)
-        const TIME_PER_LOCAL_ALIGNMENT = 1.2; // Actual processing time per image
-        const TIME_PER_AI_GENERATION = 17.0;
-
-        // Calculate total estimated time
-        let totalEstimatedTime = 0;
-        totalEstimatedTime += uploadedFiles.length * TIME_PER_LOCAL_ALIGNMENT;
-        if (isAiVariationsEnabled) {
-            totalEstimatedTime += numVariations * TIME_PER_AI_GENERATION;
-        }
-
-        // Calculate remaining time based on actual elapsed time
-        const secondsRemaining = Math.max(0, Math.ceil(totalEstimatedTime - elapsedTime));
-
-        if (secondsRemaining <= 2) return "Finishing up...";
-        if (secondsRemaining === 0) return "Complete!";
-        return `~${secondsRemaining}s remaining`;
-    }, [isProcessing, isAiVariationsEnabled, elapsedTime, numVariations, uploadedFiles.length]);
-
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
       <header className="w-full max-w-7xl mx-auto flex flex-col items-center mb-6">
@@ -793,7 +807,6 @@ export default function App() {
                     files={uploadedFiles} 
                     masterFileId={masterFileId} 
                     onSelectMaster={handleSelectMaster} 
-                    onTogglePerspective={handleTogglePerspective}
                     onToggleSimpleMatch={handleToggleSimpleMatch}
                     onDelete={handleDeleteUploadedFile}
                 />
@@ -804,19 +817,10 @@ export default function App() {
                 <div className="w-full border-t border-gray-700 my-4"></div>
                 <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
                     
-                    <div className="flex flex-col items-start gap-4 p-4 bg-gray-800/50 rounded-lg h-full">
+                    <div className="flex flex-col items-start gap-6 p-4 bg-gray-800/50 rounded-lg h-full">
                          <p className="text-left text-lg text-gray-300 mb-2">2. Configure alignment settings.</p>
-                         <GreedyModeToggle isChecked={isGreedyMode} onChange={setIsGreedyMode} />
-                         <RefinementToggle isChecked={isRefinementEnabled} onChange={setIsRefinementEnabled} />
-                         <EnsembleCorrectionToggle isChecked={isEnsembleCorrectionEnabled} onChange={setIsEnsembleCorrectionEnabled} />
-                         <PerspectiveCorrectionToggle 
-                            isChecked={allNonMasterFilesNeedPerspective} 
-                            onChange={handleToggleAllPerspective} 
-                         />
-                         <SimpleMatchToggle 
-                            isChecked={allNonMasterFilesNeedSimpleMatch} 
-                            onChange={handleToggleAllSimpleMatch} 
-                         />
+                         <StabilitySlider value={stabilityLevel} onChange={setStabilityLevel} />
+                         <AIEdgeFillToggle isChecked={isAiEdgeFillEnabled} onChange={setIsAiEdgeFillEnabled} />
                     </div>
 
                     <div className="flex flex-col items-center gap-4 p-4 bg-gray-800/50 rounded-lg h-full">

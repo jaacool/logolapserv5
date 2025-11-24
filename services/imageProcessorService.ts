@@ -378,7 +378,8 @@ export const processImageLocally = (
     isPerspectiveCorrectionEnabled: boolean,
     isSimpleMatchEnabled: boolean,
     isMaster: boolean,
-    aspectRatio: string
+    aspectRatio: string,
+    useBlackBorder: boolean = false
 ): Promise<ProcessResult> => {
     return new Promise((resolve, reject) => {
         const mats: any[] = [];
@@ -432,11 +433,25 @@ export const processImageLocally = (
             // --- Final Warp and Pad ---
             const warpedTarget = new cv.Mat(); mats.push(warpedTarget);
             const dsize = new cv.Size(masterMat.cols, masterMat.rows);
+            
+            // Determine border mode and color
+            // useBlackBorder ? Constant (Black) : Reflect101 (Mirror)
+            const borderMode = useBlackBorder ? cv.BORDER_CONSTANT : cv.BORDER_REFLECT_101;
+            const borderValue = useBlackBorder ? new cv.Scalar(0, 0, 0, 255) : new cv.Scalar(0, 0, 0, 0);
+
+            // Create a mask to track valid content (White = Content, Black = Border)
+            // We need this to distinguish between "original content" and "extrapolated border" 
+            // especially when using Reflect/Replicate which fills the border with pixels.
+            const mask = new cv.Mat(targetMat.rows, targetMat.cols, cv.CV_8UC1, new cv.Scalar(255)); mats.push(mask);
+            const warpedMask = new cv.Mat(); mats.push(warpedMask);
 
             if(isPerspectiveCorrectionEnabled) {
-                cv.warpPerspective(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+                cv.warpPerspective(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
+                // Warp mask with CONSTANT (Black) border to mark extrapolated areas
+                cv.warpPerspective(mask, warpedMask, transformMatrix, dsize, cv.INTER_NEAREST, cv.BORDER_CONSTANT, new cv.Scalar(0));
             } else {
-                cv.warpAffine(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+                cv.warpAffine(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
+                cv.warpAffine(mask, warpedMask, transformMatrix, dsize, cv.INTER_NEAREST, cv.BORDER_CONSTANT, new cv.Scalar(0));
             }
 
             const warpedWidth = warpedTarget.cols;
@@ -465,8 +480,32 @@ export const processImageLocally = (
             const topPad = Math.floor(padY / 2);
 
             const paddedMat = new cv.Mat(); mats.push(paddedMat);
-            const transparentBlack = new cv.Scalar(0, 0, 0, 0);
-            cv.copyMakeBorder(warpedTarget, paddedMat, topPad, padY - topPad, leftPad, padX - leftPad, cv.BORDER_CONSTANT, transparentBlack);
+            
+            if (useBlackBorder) {
+                // Opaque black border for AI Edge Fill
+                const padColor = new cv.Scalar(0, 0, 0, 255);
+                cv.copyMakeBorder(warpedTarget, paddedMat, topPad, padY - topPad, leftPad, padX - leftPad, cv.BORDER_CONSTANT, padColor);
+            } else {
+                // Standard mode: Mirror/Reflect + Blur
+                // 1. Pad the image with Reflection
+                cv.copyMakeBorder(warpedTarget, paddedMat, topPad, padY - topPad, leftPad, padX - leftPad, cv.BORDER_REFLECT_101);
+                
+                // 2. Pad the mask with Constant Black (marking the new padding as border)
+                const paddedMask = new cv.Mat(); mats.push(paddedMask);
+                cv.copyMakeBorder(warpedMask, paddedMask, topPad, padY - topPad, leftPad, padX - leftPad, cv.BORDER_CONSTANT, new cv.Scalar(0));
+
+                // 3. Blur the entire padded image (this blurs content + borders)
+                const blurredMat = new cv.Mat(); mats.push(blurredMat);
+                const ksize = new cv.Size(35, 35); // Slight blur
+                cv.GaussianBlur(paddedMat, blurredMat, ksize, 0, 0, cv.BORDER_DEFAULT);
+                
+                // 4. Composite: Use sharp pixels where mask is White, blurred where mask is Black
+                // We copy blurredMat onto paddedMat only where paddedMask is 0
+                const invertedMask = new cv.Mat(); mats.push(invertedMask);
+                cv.bitwise_not(paddedMask, invertedMask);
+                
+                blurredMat.copyTo(paddedMat, invertedMask);
+            }
             
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = finalWidth;
@@ -488,7 +527,8 @@ export const processImageLocally = (
 
 export const refineWithGoldenTemplate = async (
     processedImageUrl: string,
-    goldenTemplateElement: HTMLImageElement
+    goldenTemplateElement: HTMLImageElement,
+    useBlackBorder: boolean = false
 ): Promise<string> => {
      const mats: any[] = [];
     try {
@@ -501,14 +541,40 @@ export const refineWithGoldenTemplate = async (
             throw new Error("Could not load images for refinement.");
         }
 
-        // Refinement always uses the simpler affine transform as it's correcting minor drifts.
-        // It does not need perspective fallback, as the images should already be closely aligned.
+        // Refinement uses affine transform
         const alignResult = performAlignment(templateMat, targetMat, false, true, false);
         const affineTransform = alignResult.transformMatrix; mats.push(affineTransform);
 
         const warpedMat = new cv.Mat(); mats.push(warpedMat);
         const dsize = new cv.Size(templateMat.cols, templateMat.rows);
-        cv.warpAffine(targetMat, warpedMat, affineTransform, dsize, cv.INTER_LINEAR, cv.BORDER_TRANSPARENT);
+        
+        if (useBlackBorder) {
+            // Opaque black borders
+            cv.warpAffine(targetMat, warpedMat, affineTransform, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+        } else {
+            // Standard Mode: Mirror/Reflect + Blur
+            
+            // 1. Warp with Reflection
+            cv.warpAffine(targetMat, warpedMat, affineTransform, dsize, cv.INTER_LINEAR, cv.BORDER_REFLECT_101);
+            
+            // 2. Create a mask to identify the valid content area
+            const mask = new cv.Mat(targetMat.rows, targetMat.cols, cv.CV_8UC1, new cv.Scalar(255)); mats.push(mask);
+            const warpedMask = new cv.Mat(); mats.push(warpedMask);
+            cv.warpAffine(mask, warpedMask, affineTransform, dsize, cv.INTER_NEAREST, cv.BORDER_CONSTANT, new cv.Scalar(0));
+            
+            // 3. Blur the whole image (to get blurred borders)
+            const blurredMat = new cv.Mat(); mats.push(blurredMat);
+            const ksize = new cv.Size(35, 35);
+            cv.GaussianBlur(warpedMat, blurredMat, ksize, 0, 0, cv.BORDER_DEFAULT);
+            
+            // 4. Composite: Copy blurred pixels ONLY where warpedMask is 0 (border)
+            // We can use mask inversion
+            const invertedMask = new cv.Mat(); mats.push(invertedMask);
+            cv.bitwise_not(warpedMask, invertedMask);
+            
+            // Copy blurred pixels to warpedMat using the inverted mask
+            blurredMat.copyTo(warpedMat, invertedMask);
+        }
 
         const finalCanvas = document.createElement('canvas');
         finalCanvas.width = templateMat.cols;
