@@ -122,30 +122,30 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
         const variance = quadrants.reduce((sum, q) => sum + Math.pow(q - avgQuadrant, 2), 0) / 4;
         const coefficientOfVariation = avgQuadrant > 0 ? Math.sqrt(variance) / avgQuadrant : 0;
 
-        // Decision Logic - VERY STRICT: Only clearly frontal images
+        // Decision Logic - EXTREMELY STRICT: Only obviously frontal images
         // Must have many exact right angles (90°/180°) and parallel lines
         
         const strongFrontalIndicators = [
-            exactRightAngleRatio > 0.50,             // MANY exact right angles (±5°)
-            hasParallelLines && exactRightAngleRatio > 0.40, // Parallel lines + many right angles
-            exactRightAngleCount > 30,               // High absolute count of exact right angles
-            hvRatio > 0.75 && exactRightAngleRatio > 0.35, // Very aligned + many exact angles
-            coefficientOfVariation < 0.25 && exactRightAngleRatio > 0.30 // Very uniform + many exact angles
+            exactRightAngleRatio > 0.60,             // VERY MANY exact right angles (±5°)
+            hasParallelLines && exactRightAngleRatio > 0.50, // Parallel lines + very many right angles
+            exactRightAngleCount > 40,               // Very high absolute count of exact right angles
+            hvRatio > 0.80 && exactRightAngleRatio > 0.45, // Extremely aligned + many exact angles
+            coefficientOfVariation < 0.20 && exactRightAngleRatio > 0.40 // Extremely uniform + many exact angles
         ].filter(Boolean).length;
 
         const moderateFrontalIndicators = [
-            exactRightAngleRatio > 0.35,             // Good amount of exact right angles
-            hvRatio > 0.70,                          // Very good general alignment
-            hasParallelLines && hvRatio > 0.60,      // Parallel lines + good alignment
-            coefficientOfVariation < 0.30,           // Good uniformity
-            exactRightAngleCount > 20 && hvRatio > 0.65, // Many exact angles + very aligned
-            totalLines > 100 && exactRightAngleRatio > 0.25 // Many lines with good exact angles
+            exactRightAngleRatio > 0.45,             // Many exact right angles
+            hvRatio > 0.75,                          // Extremely good general alignment
+            hasParallelLines && hvRatio > 0.70,      // Parallel lines + very good alignment
+            coefficientOfVariation < 0.25,           // Very good uniformity
+            exactRightAngleCount > 30 && hvRatio > 0.70, // Many exact angles + extremely aligned
+            totalLines > 120 && exactRightAngleRatio > 0.35 // Very many lines with many exact angles
         ].filter(Boolean).length;
 
-        // STRICT: Frontal only if 3+ strong indicators OR 4+ moderate indicators
+        // EXTREMELY STRICT: Frontal only if 4+ strong indicators OR 5+ moderate indicators
         const isFrontal = 
-            strongFrontalIndicators >= 3 ||
-            moderateFrontalIndicators >= 4;
+            strongFrontalIndicators >= 4 ||
+            moderateFrontalIndicators >= 5;
 
         console.log(`Perspective Detection: hvRatio=${hvRatio.toFixed(2)}, exactRA=${exactRightAngleRatio.toFixed(2)}, exactCount=${exactRightAngleCount}, parallel=${hasParallelLines}, cv=${coefficientOfVariation.toFixed(2)}, lines=${totalLines}, strong=${strongFrontalIndicators}, moderate=${moderateFrontalIndicators} -> ${isFrontal ? 'FRONTAL' : 'PERSPECTIVE'}`);
 
