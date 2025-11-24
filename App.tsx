@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, selectBestMaster } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -38,7 +38,6 @@ const DEFAULT_PROMPT_SNIPPETS: string[] = [
     'a trade show display'
 ];
 
-
 const getFriendlyErrorMessage = (err: any, context: string) => {
     const rawMessage = err.message || 'An unknown error occurred.';
     if (rawMessage.includes('Not enough good matches')) {
@@ -49,6 +48,9 @@ const getFriendlyErrorMessage = (err: any, context: string) => {
     }
     if (rawMessage.includes('API key not valid') || rawMessage.includes('API_KEY_INVALID')) {
         return 'Your API key is not valid. Please enter a valid key and try again.';
+    }
+    if (rawMessage.includes('OpenCV internal error code')) {
+        return `A low-level image alignment error occurred for "${context}". The perspective transform became unstable or invalid for this image. Try a cleaner scan, less extreme perspective, or disabling perspective correction for this file.`;
     }
     return `An error occurred with "${context}": ${rawMessage}`;
 };
@@ -85,6 +87,7 @@ export default function App() {
   const [apiKey, setApiKey] = useState<string>('');
   const [projectContext, setProjectContext] = useState<string>('');
   const [contextImageFile, setContextImageFile] = useState<File | null>(null);
+  const [isAutoSelectingMaster, setIsAutoSelectingMaster] = useState<boolean>(false);
   
   const totalEstimatedTimeSecRef = useRef(0);
   
@@ -204,6 +207,28 @@ export default function App() {
     );
   }, []);
 
+  const handleAutoSelectMaster = useCallback(async () => {
+    if (uploadedFiles.length <= 1) return;
+    
+    setIsAutoSelectingMaster(true);
+    setError(null);
+    
+    try {
+      const imageElements = uploadedFiles.map(f => f.imageElement);
+      const bestIndex = await selectBestMaster(imageElements);
+      const bestFile = uploadedFiles[bestIndex];
+      
+      if (bestFile) {
+        handleSelectMaster(bestFile.id);
+        console.log(`Auto-selected master: ${bestFile.file.name} (index ${bestIndex})`);
+      }
+    } catch (err) {
+      console.error('Auto master selection failed:', err);
+      setError('Auto master selection failed. Please select manually.');
+    } finally {
+      setIsAutoSelectingMaster(false);
+    }
+  }, [uploadedFiles, handleSelectMaster]);
 
   const handleBackToSelection = useCallback(() => {
     setProcessedFiles([]);
@@ -932,6 +957,8 @@ export default function App() {
                                 onSelectMaster={handleSelectMaster} 
                                 onToggleSimpleMatch={handleToggleSimpleMatch}
                                 onDelete={handleDeleteUploadedFile}
+                                onAutoSelectMaster={handleAutoSelectMaster}
+                                isAutoSelecting={isAutoSelectingMaster}
                             />
                         )}
                     </div>

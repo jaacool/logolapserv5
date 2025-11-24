@@ -131,6 +131,54 @@ const performSimpleAlignment = (
     }
 };
 
+// Compute RMS reprojection error for a given transform and match set.
+// Lower values indicate a better geometric fit between master and target.
+const computeReprojectionError = (
+    keypointsBase: any,
+    keypointsTarget: any,
+    goodMatches: any[],
+    transformMatrix: any
+): number => {
+    if (!goodMatches || goodMatches.length === 0 || !transformMatrix || transformMatrix.empty()) {
+        return Number.POSITIVE_INFINITY;
+    }
+
+    const isHomography = transformMatrix.rows === 3 && transformMatrix.cols === 3;
+    let sumSq = 0;
+    const n = goodMatches.length;
+
+    for (let i = 0; i < n; i++) {
+        const m = goodMatches[i];
+        const targetPt = keypointsTarget.get(m.queryIdx).pt;
+        const basePt = keypointsBase.get(m.trainIdx).pt;
+
+        let xPred: number;
+        let yPred: number;
+
+        if (isHomography) {
+            const x = targetPt.x;
+            const y = targetPt.y;
+            const X = transformMatrix.doubleAt(0, 0) * x + transformMatrix.doubleAt(0, 1) * y + transformMatrix.doubleAt(0, 2);
+            const Y = transformMatrix.doubleAt(1, 0) * x + transformMatrix.doubleAt(1, 1) * y + transformMatrix.doubleAt(1, 2);
+            const W = transformMatrix.doubleAt(2, 0) * x + transformMatrix.doubleAt(2, 1) * y + transformMatrix.doubleAt(2, 2);
+            const invW = W !== 0 ? 1.0 / W : 1.0;
+            xPred = X * invW;
+            yPred = Y * invW;
+        } else {
+            const x = targetPt.x;
+            const y = targetPt.y;
+            xPred = transformMatrix.doubleAt(0, 0) * x + transformMatrix.doubleAt(0, 1) * y + transformMatrix.doubleAt(0, 2);
+            yPred = transformMatrix.doubleAt(1, 0) * x + transformMatrix.doubleAt(1, 1) * y + transformMatrix.doubleAt(1, 2);
+        }
+
+        const dx = xPred - basePt.x;
+        const dy = yPred - basePt.y;
+        sumSq += dx * dx + dy * dy;
+    }
+
+    return Math.sqrt(sumSq / Math.max(1, n));
+};
+
 // Robust alignment for partial logo matching
 // Handles cases where master has more logo elements than target
 const performRobustAlignment = (
@@ -262,87 +310,29 @@ const performRobustAlignment = (
         const matBasePts = cv.matFromArray(basePts.length / 2, 1, cv.CV_32FC2, basePts); mats.push(matBasePts);
         const matTargetPts = cv.matFromArray(targetPts.length / 2, 1, cv.CV_32FC2, targetPts); mats.push(matTargetPts);
 
-        // Auto-select best algorithm based on transformation quality
         let transformMatrix: any;
-        let selectedAlgorithm = "unknown";
-        
         if (usePerspectiveCorrection) {
-            // Test both perspective and affine, choose the best one
-            const maskHomography = new cv.Mat(); mats.push(maskHomography);
-            const homographyMatrix = cv.findHomography(matTargetPts, matBasePts, cv.RANSAC, RANSAC_THRESHOLD, maskHomography);
+            // Robust perspective estimation with adaptive RANSAC
+            const mask = new cv.Mat(); mats.push(mask);
+            transformMatrix = cv.findHomography(matTargetPts, matBasePts, cv.RANSAC, RANSAC_THRESHOLD, mask);
             
-            const maskAffine = new cv.Mat(); mats.push(maskAffine);
-            const affineMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, maskAffine, cv.RANSAC, RANSAC_THRESHOLD);
-            
-            let homographyScore = 0;
-            let affineScore = 0;
-            
-            // Calculate homography quality
-            if (!homographyMatrix.empty()) {
-                let inlierCount = 0;
-                for (let i = 0; i < maskHomography.rows; i++) {
-                    if (maskHomography.ucharAt(i, 0) > 0) inlierCount++;
-                }
-                const inlierRatio = inlierCount / goodMatches.length;
-                
-                // Check for perspective distortion (should be close to affine for partial logos)
-                const h00 = homographyMatrix.doubleAt(0, 0);
-                const h11 = homographyMatrix.doubleAt(1, 1);
-                const h20 = homographyMatrix.doubleAt(2, 0);
-                const h21 = homographyMatrix.doubleAt(2, 1);
-                const perspectiveDistortion = Math.abs(h20) + Math.abs(h21);
-                
-                // Score: high inliers + low perspective distortion = good
-                homographyScore = inlierRatio * (1.0 - Math.min(perspectiveDistortion * 10, 0.5));
-                
-                console.log(`Homography: ${inlierCount}/${goodMatches.length} inliers (${(inlierRatio * 100).toFixed(1)}%), distortion: ${perspectiveDistortion.toFixed(4)}, score: ${homographyScore.toFixed(3)}`);
-            }
-            
-            // Calculate affine quality
-            if (!affineMatrix.empty()) {
-                let inlierCount = 0;
-                for (let i = 0; i < maskAffine.rows; i++) {
-                    if (maskAffine.ucharAt(i, 0) > 0) inlierCount++;
-                }
-                const inlierRatio = inlierCount / goodMatches.length;
-                
-                // Check for uniform scaling (good for partial logos)
-                const a = affineMatrix.doubleAt(0, 0);
-                const b = affineMatrix.doubleAt(0, 1);
-                const d = affineMatrix.doubleAt(1, 0);
-                const e = affineMatrix.doubleAt(1, 1);
-                const scaleX = Math.sqrt(a * a + b * b);
-                const scaleY = Math.sqrt(d * d + e * e);
-                const scaleUniformity = 1.0 - Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY);
-                
-                // Score: high inliers + uniform scaling = good for partial logos
-                affineScore = inlierRatio * (0.8 + 0.2 * scaleUniformity);
-                
-                console.log(`Affine: ${inlierCount}/${goodMatches.length} inliers (${(inlierRatio * 100).toFixed(1)}%), scale uniformity: ${scaleUniformity.toFixed(3)}, score: ${affineScore.toFixed(3)}`);
-            }
-            
-            // Auto-select best algorithm
-            if (homographyScore > affineScore && homographyScore > 0.3) {
-                transformMatrix = homographyMatrix;
-                if (!affineMatrix.empty()) affineMatrix.delete();
-                selectedAlgorithm = "perspective";
-                console.log(`✓ Auto-selected: PERSPECTIVE (score: ${homographyScore.toFixed(3)})`);
-            } else if (affineScore > 0.2) {
-                transformMatrix = affineMatrix;
-                if (!homographyMatrix.empty()) homographyMatrix.delete();
-                selectedAlgorithm = "affine";
-                console.log(`✓ Auto-selected: AFFINE (score: ${affineScore.toFixed(3)}) - Better for partial logo matching`);
+            if (transformMatrix.empty()) {
+                console.warn("Homography failed, falling back to affine transform.");
+                transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
             } else {
-                // Both scores low, try homography as fallback
-                if (!homographyMatrix.empty()) {
-                    transformMatrix = homographyMatrix;
-                    if (!affineMatrix.empty()) affineMatrix.delete();
-                    selectedAlgorithm = "perspective-fallback";
-                    console.warn("Low scores, using perspective as fallback");
-                } else {
-                    transformMatrix = affineMatrix;
-                    selectedAlgorithm = "affine-fallback";
-                    console.warn("Low scores, using affine as fallback");
+                // Count inliers
+                let inlierCount = 0;
+                for (let i = 0; i < mask.rows; i++) {
+                    if (mask.ucharAt(i, 0) > 0) inlierCount++;
+                }
+                const inlierRatio = inlierCount / goodMatches.length;
+                console.log(`Homography inliers: ${inlierCount}/${goodMatches.length} (${(inlierRatio * 100).toFixed(1)}%)`);
+                
+                // If too few inliers, fallback to affine
+                if (inlierRatio < 0.3) {
+                    console.warn("Low inlier ratio, falling back to affine transform.");
+                    transformMatrix.delete();
+                    transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
                 }
             }
         } else {
@@ -356,7 +346,6 @@ const performRobustAlignment = (
                     if (mask.ucharAt(i, 0) > 0) inlierCount++;
                 }
                 console.log(`Affine inliers: ${inlierCount}/${goodMatches.length}`);
-                selectedAlgorithm = "affine-only";
             }
         }
         
@@ -701,6 +690,171 @@ const performAlignment = (
     }
 };
 
+// Auto Master Selection: Find the best master image based on:
+// 1. Logo centering (how centered is the logo in the image)
+// 2. Similarity to other images (represents the "average" of the set)
+export const selectBestMaster = async (
+    images: HTMLImageElement[]
+): Promise<number> => {
+    if (images.length === 0) {
+        throw new Error('No images provided for master selection');
+    }
+    if (images.length === 1) {
+        return 0;
+    }
+
+    const mats: any[] = [];
+    let akaze: any;
+    let clahe: any;
+
+    try {
+        // Step 1: Extract features from all images
+        akaze = new cv.AKAZE();
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        const bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
+
+        interface ImageFeatures {
+            index: number;
+            mat: any;
+            gray: any;
+            keypoints: any;
+            descriptors: any;
+            centerScore: number; // 0-1, higher = more centered
+        }
+
+        const imageFeatures: ImageFeatures[] = [];
+
+        for (let i = 0; i < images.length; i++) {
+            const mat = loadImageToMat(images[i]);
+            const gray = new cv.Mat();
+            cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+            clahe.apply(gray, gray);
+
+            const keypoints = new cv.KeyPointVector();
+            const descriptors = new cv.Mat();
+            akaze.detectAndCompute(gray, new cv.Mat(), keypoints, descriptors);
+
+            // Calculate centering score based on keypoint distribution
+            let centerScore = 0;
+            if (keypoints.size() > 0) {
+                const centerX = mat.cols / 2;
+                const centerY = mat.rows / 2;
+                let totalDistance = 0;
+
+                for (let j = 0; j < keypoints.size(); j++) {
+                    const pt = keypoints.get(j).pt;
+                    const dx = pt.x - centerX;
+                    const dy = pt.y - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    totalDistance += distance;
+                }
+
+                const avgDistance = totalDistance / keypoints.size();
+                const maxPossibleDistance = Math.sqrt(centerX * centerX + centerY * centerY);
+                // Invert: smaller average distance = higher score
+                centerScore = 1 - Math.min(1, avgDistance / maxPossibleDistance);
+            }
+
+            imageFeatures.push({
+                index: i,
+                mat,
+                gray,
+                keypoints,
+                descriptors,
+                centerScore
+            });
+        }
+
+        console.log('Center scores:', imageFeatures.map(f => `Image ${f.index}: ${f.centerScore.toFixed(3)}`).join(', '));
+
+        // Step 2: Calculate similarity scores (average match quality with all other images)
+        const similarityScores: number[] = new Array(images.length).fill(0);
+
+        for (let i = 0; i < imageFeatures.length; i++) {
+            let totalMatches = 0;
+            let totalQuality = 0;
+
+            for (let j = 0; j < imageFeatures.length; j++) {
+                if (i === j) continue;
+
+                const desc1 = imageFeatures[i].descriptors;
+                const desc2 = imageFeatures[j].descriptors;
+
+                if (desc1.empty() || desc2.empty()) continue;
+
+                const matches = new cv.DMatchVectorVector();
+                bf.knnMatch(desc1, desc2, matches, 2);
+
+                let goodMatches = 0;
+                for (let k = 0; k < matches.size(); k++) {
+                    const match = matches.get(k);
+                    if (match.size() > 1) {
+                        if (match.get(0).distance < 0.75 * match.get(1).distance) {
+                            goodMatches++;
+                        }
+                    }
+                }
+
+                matches.delete();
+                totalMatches += goodMatches;
+            }
+
+            // Normalize by number of comparisons
+            const avgMatches = totalMatches / Math.max(1, imageFeatures.length - 1);
+            similarityScores[i] = avgMatches;
+        }
+
+        console.log('Similarity scores:', similarityScores.map((s, i) => `Image ${i}: ${s.toFixed(1)} matches`).join(', '));
+
+        // Step 3: Combine scores (weighted: 40% centering, 60% similarity)
+        const CENTERING_WEIGHT = 0.4;
+        const SIMILARITY_WEIGHT = 0.6;
+
+        // Normalize similarity scores to 0-1 range
+        const maxSimilarity = Math.max(...similarityScores);
+        const normalizedSimilarity = similarityScores.map(s => maxSimilarity > 0 ? s / maxSimilarity : 0);
+
+        const combinedScores = imageFeatures.map((f, i) => ({
+            index: i,
+            score: f.centerScore * CENTERING_WEIGHT + normalizedSimilarity[i] * SIMILARITY_WEIGHT
+        }));
+
+        console.log('Combined scores:', combinedScores.map(s => `Image ${s.index}: ${s.score.toFixed(3)}`).join(', '));
+
+        // Find the best master
+        let bestIndex = 0;
+        let bestScore = combinedScores[0].score;
+
+        for (let i = 1; i < combinedScores.length; i++) {
+            if (combinedScores[i].score > bestScore) {
+                bestScore = combinedScores[i].score;
+                bestIndex = i;
+            }
+        }
+
+        console.log(`Auto-selected master: Image ${bestIndex} with score ${bestScore.toFixed(3)}`);
+
+        // Cleanup
+        imageFeatures.forEach(f => {
+            if (f.mat && !f.mat.isDeleted()) f.mat.delete();
+            if (f.gray && !f.gray.isDeleted()) f.gray.delete();
+            if (f.keypoints && !f.keypoints.isDeleted()) f.keypoints.delete();
+            if (f.descriptors && !f.descriptors.isDeleted()) f.descriptors.delete();
+        });
+
+        return bestIndex;
+
+    } catch (error) {
+        console.error('Auto master selection failed:', error);
+        // Fallback to first image
+        return 0;
+    } finally {
+        mats.forEach(mat => { if (mat && mat.delete && !mat.isDeleted()) mat.delete(); });
+        if (akaze && akaze.delete) akaze.delete();
+        if (clahe && clahe.delete) clahe.delete();
+    }
+};
+
 export const processImageLocally = (
     masterImage: HTMLImageElement, 
     targetImage: HTMLImageElement, 
@@ -741,25 +895,128 @@ export const processImageLocally = (
                 dummyCanvas.width = 1; dummyCanvas.height = 1;
                 debugUrl = dummyCanvas.toDataURL();
             } else {
-                // Choose algorithm based on simple match setting
-                // Use robust alignment for better partial logo matching
-                const alignResult = isSimpleMatchEnabled
-                    ? performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled)
-                    : performRobustAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, isPerspectiveCorrectionEnabled);
-                 
-                 transformMatrix = alignResult.transformMatrix;
-                 mats.push(transformMatrix);
+                // If the user explicitly enabled Simple Match, respect that choice
+                // and skip the automatic mode selection.
+                if (isSimpleMatchEnabled) {
+                    const alignResult = performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled);
+                    transformMatrix = alignResult.transformMatrix;
+                    mats.push(transformMatrix);
 
-                 const debugCanvas = document.createElement('canvas');
-                 const debugMat = new cv.Mat(); mats.push(debugMat);
-                 goodMatchesVec = new cv.DMatchVector();
-                 alignResult.goodMatches.forEach(m => goodMatchesVec.push_back(m));
-                 cv.drawMatches(targetMat, alignResult.keypointsTarget, masterMat, alignResult.keypointsBase, goodMatchesVec, debugMat);
-                 cv.imshow(debugCanvas, debugMat);
-                 debugUrl = debugCanvas.toDataURL('image/png');
-                 
-                 alignResult.keypointsBase.delete();
-                 alignResult.keypointsTarget.delete();
+                    const debugCanvas = document.createElement('canvas');
+                    const debugMat = new cv.Mat(); mats.push(debugMat);
+                    goodMatchesVec = new cv.DMatchVector();
+                    alignResult.goodMatches.forEach((m: any) => goodMatchesVec.push_back(m));
+                    cv.drawMatches(targetMat, alignResult.keypointsTarget, masterMat, alignResult.keypointsBase, goodMatchesVec, debugMat);
+                    cv.imshow(debugCanvas, debugMat);
+                    debugUrl = debugCanvas.toDataURL('image/png');
+
+                    alignResult.keypointsBase.delete();
+                    alignResult.keypointsTarget.delete();
+                } else {
+                    // Automatic mode selection between:
+                    // - Simple Match (rotation + uniform scale)
+                    // - Affine (no perspective, allows shear)
+                    // - Perspective (full homography, only if enabled via stability level)
+
+                    type AlignmentCandidate = {
+                        mode: 'simple' | 'affine' | 'perspective';
+                        transformMatrix: any;
+                        keypointsBase: any;
+                        keypointsTarget: any;
+                        goodMatches: any[];
+                        reprojectionError: number;
+                    };
+
+                    const candidates: AlignmentCandidate[] = [];
+
+                    // Candidate 1: Simple Match
+                    try {
+                        const simple = performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled);
+                        const simpleError = computeReprojectionError(simple.keypointsBase, simple.keypointsTarget, simple.goodMatches, simple.transformMatrix);
+                        candidates.push({
+                            mode: 'simple',
+                            transformMatrix: simple.transformMatrix,
+                            keypointsBase: simple.keypointsBase,
+                            keypointsTarget: simple.keypointsTarget,
+                            goodMatches: simple.goodMatches,
+                            reprojectionError: simpleError,
+                        });
+                    } catch (e) {
+                        console.warn('Simple match candidate failed:', e);
+                    }
+
+                    // Candidate 2: Affine (robust alignment without perspective)
+                    try {
+                        const affine = performRobustAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, false);
+                        const affineError = computeReprojectionError(affine.keypointsBase, affine.keypointsTarget, affine.goodMatches, affine.transformMatrix);
+                        candidates.push({
+                            mode: 'affine',
+                            transformMatrix: affine.transformMatrix,
+                            keypointsBase: affine.keypointsBase,
+                            keypointsTarget: affine.keypointsTarget,
+                            goodMatches: affine.goodMatches,
+                            reprojectionError: affineError,
+                        });
+                    } catch (e) {
+                        console.warn('Affine candidate failed:', e);
+                    }
+
+                    // Candidate 3: Perspective (only if enabled via stability level)
+                    if (isPerspectiveCorrectionEnabled) {
+                        try {
+                            const perspective = performRobustAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, true);
+                            const perspectiveError = computeReprojectionError(perspective.keypointsBase, perspective.keypointsTarget, perspective.goodMatches, perspective.transformMatrix);
+                            candidates.push({
+                                mode: 'perspective',
+                                transformMatrix: perspective.transformMatrix,
+                                keypointsBase: perspective.keypointsBase,
+                                keypointsTarget: perspective.keypointsTarget,
+                                goodMatches: perspective.goodMatches,
+                                reprojectionError: perspectiveError,
+                            });
+                        } catch (e) {
+                            console.warn('Perspective candidate failed:', e);
+                        }
+                    }
+
+                    if (candidates.length === 0) {
+                        throw new Error('No valid alignment candidate found.');
+                    }
+
+                    // Pick the candidate with the lowest reprojection error
+                    let best = candidates[0];
+                    for (let i = 1; i < candidates.length; i++) {
+                        if (candidates[i].reprojectionError < best.reprojectionError) {
+                            best = candidates[i];
+                        }
+                    }
+
+                    console.log(`Auto alignment chose mode="${best.mode}" with RMS error=${best.reprojectionError.toFixed(2)}px`);
+
+                    transformMatrix = best.transformMatrix;
+                    mats.push(transformMatrix);
+
+                    // Draw debug matches for the chosen candidate
+                    const debugCanvas = document.createElement('canvas');
+                    const debugMat = new cv.Mat(); mats.push(debugMat);
+                    goodMatchesVec = new cv.DMatchVector();
+                    best.goodMatches.forEach((m: any) => goodMatchesVec.push_back(m));
+                    cv.drawMatches(targetMat, best.keypointsTarget, masterMat, best.keypointsBase, goodMatchesVec, debugMat);
+                    cv.imshow(debugCanvas, debugMat);
+                    debugUrl = debugCanvas.toDataURL('image/png');
+
+                    // Clean up non-selected candidates
+                    candidates.forEach(c => {
+                        if (c === best) return;
+                        if (c.transformMatrix && !c.transformMatrix.isDeleted()) c.transformMatrix.delete();
+                        if (c.keypointsBase && !c.keypointsBase.isDeleted()) c.keypointsBase.delete();
+                        if (c.keypointsTarget && !c.keypointsTarget.isDeleted()) c.keypointsTarget.delete();
+                    });
+
+                    // Delete keypoints of the selected candidate
+                    best.keypointsBase.delete();
+                    best.keypointsTarget.delete();
+                }
             }
 
             // --- Final Warp and Pad ---
@@ -777,7 +1034,9 @@ export const processImageLocally = (
             const mask = new cv.Mat(targetMat.rows, targetMat.cols, cv.CV_8UC1, new cv.Scalar(255)); mats.push(mask);
             const warpedMask = new cv.Mat(); mats.push(warpedMask);
 
-            if(isPerspectiveCorrectionEnabled) {
+            const usesHomography = transformMatrix.rows === 3;
+
+            if(usesHomography) {
                 cv.warpPerspective(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
                 // Warp mask with CONSTANT (Black) border to mark extrapolated areas
                 cv.warpPerspective(mask, warpedMask, transformMatrix, dsize, cv.INTER_NEAREST, cv.BORDER_CONSTANT, new cv.Scalar(0));

@@ -64,32 +64,16 @@ Wenn ein Master-Logo mehr Elemente enthält als ein Target-Bild (z.B. Master: "L
    }
    ```
 
-4. **Auto-Algorithm Selection** (NEU! 🎯)
+4. **Adaptive Fallback-Strategie**
    ```typescript
-   // Testet BEIDE Algorithmen und wählt automatisch den besten
-   // Bewertet Qualität basierend auf:
-   // - Inlier-Ratio (wie viele Matches passen zur Transformation)
-   // - Perspective Distortion (wie stark ist die Verzerrung)
-   // - Scale Uniformity (wie gleichmäßig ist die Skalierung)
+   // Bei Perspective Correction:
+   // 1. Versuche Homography mit RANSAC
+   // 2. Zähle Inliers
+   // 3. Falls Inlier-Ratio < 30% → Fallback zu Affine Transform
    
-   if (usePerspectiveCorrection) {
-       const homographyMatrix = cv.findHomography(...);
-       const affineMatrix = cv.estimateAffine2D(...);
-       
-       // Homography Score: Inliers * (1 - Distortion)
-       const perspectiveDistortion = Math.abs(h20) + Math.abs(h21);
-       homographyScore = inlierRatio * (1.0 - Math.min(perspectiveDistortion * 10, 0.5));
-       
-       // Affine Score: Inliers * (0.8 + 0.2 * Uniformity)
-       const scaleUniformity = 1.0 - Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY);
-       affineScore = inlierRatio * (0.8 + 0.2 * scaleUniformity);
-       
-       // Wähle den besten
-       if (homographyScore > affineScore && homographyScore > 0.3) {
-           transformMatrix = homographyMatrix; // Perspective für frontale Logos
-       } else if (affineScore > 0.2) {
-           transformMatrix = affineMatrix; // Affine für Partial Logos
-       }
+   if (inlierRatio < 0.3) {
+       console.warn("Low inlier ratio, falling back to affine transform.");
+       transformMatrix = cv.estimateAffine2D(...);
    }
    ```
 
@@ -144,16 +128,13 @@ const alignResult = performRobustAlignment(templateMat, targetMat, false, true, 
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 5. Auto-Algorithm Selection (NEU! 🎯)                  │
-│    → Teste BEIDE: Homography UND Affine                │
-│    → Bewerte Qualität (Inliers + Distortion/Uniformity)│
-│    → Wähle automatisch den besten Algorithmus          │
+│ 5. Transform Estimation mit RANSAC (threshold 5.0)     │
+│    → Höhere Toleranz für Outliers                       │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 6. Transform Estimation mit RANSAC (threshold 5.0)     │
-│    → Perspective: Für frontale Logos (Score > 0.3)      │
-│    → Affine: Für Partial Logos (Score > 0.2)           │
+│ 6. Inlier Check & Adaptive Fallback                    │
+│    → Falls < 30% Inliers: Homography → Affine          │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -174,13 +155,12 @@ Der robuste Algorithmus wird bei allen Levels verwendet, passt sich aber an:
 
 ## Vorteile
 
-✅ **Auto-Algorithm Selection**: Wählt automatisch zwischen Perspective & Affine  
 ✅ **Bessere Partial Matching**: Funktioniert auch wenn Master mehr Elemente hat  
 ✅ **Robustere Schätzung**: Höhere RANSAC-Toleranz für Outliers  
+✅ **Adaptive Strategie**: Automatischer Fallback bei schlechten Matches  
 ✅ **Center-Weighted**: Bevorzugt zentrale Logos bei Logo-Wänden  
 ✅ **Multi-Logo-Support**: Ignoriert periphere Logo-Varianten automatisch  
-✅ **Quality-Based**: Bewertet beide Algorithmen und wählt den besten  
-✅ **Debugging**: Console Logs zeigen Scores und ausgewählten Algorithmus  
+✅ **Debugging**: Console Logs zeigen Feature-Counts und Inlier-Ratios  
 
 ## Testing
 
@@ -194,27 +174,9 @@ Der robuste Algorithmus wird bei allen Levels verwendet, passt sich aber an:
 2. Target: Mehrere Logo-Varianten (z.B. Logo-Wand mit verschiedenen Versionen)
 3. Erwartung: Matcht das zentrale Logo, ignoriert periphere Logos
 
-### Szenario 3: Auto-Algorithm Selection (NEU!)
-1. Master: Luna + day + "The future of family health"
-2. Target 1: Nur "Luna" → Sollte AFFINE wählen (Partial Logo)
-3. Target 2: "Luna + day" → Sollte AFFINE wählen (Partial Logo)
-4. Target 3: Frontales Logo → Sollte PERSPECTIVE wählen
-5. Erwartung: Automatische Wahl des besten Algorithmus
-
 Überprüfe Console für:
 - Feature counts (sollten höher sein als vorher)
 - Good matches (sollte >= 8 sein)
 - "Center-weighted matching" Meldung bei Logo-Wänden (>=12 Matches)
-- **Homography Score** und **Affine Score**
-- **"✓ Auto-selected: AFFINE"** oder **"✓ Auto-selected: PERSPECTIVE"**
 - Cluster center distance (sollte klein sein, nahe Bildmitte)
-
-### Beispiel Console Output:
-```
-Features detected - Base: 342, Target: 287
-Good matches found: 45/8 required
-Center-weighted matching: Selected 30 matches from central region (cluster center: 89px from image center)
-Homography: 28/30 inliers (93.3%), distortion: 0.0234, score: 0.816
-Affine: 29/30 inliers (96.7%), scale uniformity: 0.987, score: 0.957
-✓ Auto-selected: AFFINE (score: 0.957) - Better for partial logo matching
-```
+- Inlier ratios (sollte >= 30% sein für Homography)
