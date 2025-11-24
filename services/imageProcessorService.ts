@@ -247,66 +247,92 @@ const performRobustAlignment = (
             throw new Error(`Not enough good matches found for alignment - ${goodMatches.length}/${MIN_MATCH_COUNT}.`);
         }
 
-        // SPATIAL DISTRIBUTION SCORING: Prioritize matches that cover large areas
-        // Logos often have large uniform areas and small detailed elements
-        // Small elements have more features but large areas are more important for alignment
+        // CONVEX HULL AREA MAXIMIZATION: Select matches that cover the largest geometric area
+        // This ensures we align the main/large parts of the logo, not just small detailed features
         
-        const imageCenterX = targetMat.cols / 2;
-        const imageCenterY = targetMat.rows / 2;
+        // Sort matches by quality first
+        goodMatches.sort((a, b) => a.distance - b.distance);
         
-        // Calculate spatial distribution score for each match
-        const matchesWithScores = goodMatches.map(match => {
-            const pt = keypointsTarget.get(match.queryIdx).pt;
-            const distanceToCenter = Math.sqrt(
-                Math.pow(pt.x - imageCenterX, 2) + 
-                Math.pow(pt.y - imageCenterY, 2)
-            );
+        // Helper: Calculate convex hull area of a set of points
+        const calculateConvexHullArea = (points: {x: number, y: number}[]): number => {
+            if (points.length < 3) return 0;
             
-            // Calculate how spread out this match is from others (spatial coverage)
-            let minDistanceToOthers = Infinity;
-            for (let i = 0; i < Math.min(goodMatches.length, 50); i++) {
-                if (goodMatches[i] === match) continue;
-                const otherPt = keypointsTarget.get(goodMatches[i].queryIdx).pt;
-                const dist = Math.sqrt(
-                    Math.pow(pt.x - otherPt.x, 2) + 
-                    Math.pow(pt.y - otherPt.y, 2)
-                );
-                minDistanceToOthers = Math.min(minDistanceToOthers, dist);
+            // Simple convex hull using gift wrapping (Jarvis march)
+            const hull: {x: number, y: number}[] = [];
+            
+            // Find leftmost point
+            let leftmost = 0;
+            for (let i = 1; i < points.length; i++) {
+                if (points[i].x < points[leftmost].x) leftmost = i;
             }
             
-            // Score components:
-            // 1. Match quality (lower distance = better)
-            const qualityScore = 1 / (1 + match.distance);
+            let p = leftmost;
+            do {
+                hull.push(points[p]);
+                let q = (p + 1) % points.length;
+                
+                for (let i = 0; i < points.length; i++) {
+                    const cross = (points[q].x - points[p].x) * (points[i].y - points[p].y) - 
+                                  (points[q].y - points[p].y) * (points[i].x - points[p].x);
+                    if (cross < 0) q = i;
+                }
+                p = q;
+            } while (p !== leftmost && hull.length < points.length);
             
-            // 2. Spatial spread (matches far from others = better coverage of large areas)
-            // Normalize by image diagonal
-            const imageDiagonal = Math.sqrt(targetMat.cols * targetMat.cols + targetMat.rows * targetMat.rows);
-            const spreadScore = Math.min(1, minDistanceToOthers / (imageDiagonal * 0.2));
+            // Calculate area using shoelace formula
+            let area = 0;
+            for (let i = 0; i < hull.length; i++) {
+                const j = (i + 1) % hull.length;
+                area += hull[i].x * hull[j].y;
+                area -= hull[j].x * hull[i].y;
+            }
+            return Math.abs(area) / 2;
+        };
+        
+        // Greedy selection: Build match set that maximizes convex hull area
+        const selectedMatches = [];
+        const candidateMatches = [...goodMatches];
+        
+        // Start with best quality matches
+        selectedMatches.push(candidateMatches[0]);
+        selectedMatches.push(candidateMatches[1]);
+        selectedMatches.push(candidateMatches[2]);
+        
+        // Iteratively add matches that maximize the convex hull area
+        while (selectedMatches.length < Math.min(candidateMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30))) {
+            let bestMatch = null;
+            let bestArea = 0;
             
-            // 3. Center proximity (for multi-logo scenarios)
-            const centerScore = 1 - Math.min(1, distanceToCenter / (imageDiagonal * 0.5));
+            for (const candidate of candidateMatches) {
+                if (selectedMatches.includes(candidate)) continue;
+                
+                // Test adding this match
+                const testSet = [...selectedMatches, candidate];
+                const points = testSet.map(m => keypointsTarget.get(m.queryIdx).pt);
+                const area = calculateConvexHullArea(points);
+                
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestMatch = candidate;
+                }
+            }
             
-            // Combined score: 30% quality, 50% spatial spread, 20% center
-            // Spatial spread is most important to cover large logo areas
-            const combinedScore = qualityScore * 0.3 + spreadScore * 0.5 + centerScore * 0.2;
-            
-            return { match, combinedScore, spreadScore, qualityScore, centerScore, pt, distanceToCenter };
-        });
+            if (bestMatch) {
+                selectedMatches.push(bestMatch);
+            } else {
+                break;
+            }
+        }
         
-        // Sort by combined score (best coverage of large areas first)
-        matchesWithScores.sort((a, b) => b.combinedScore - a.combinedScore);
+        goodMatches = selectedMatches;
         
-        // Select top matches that maximize spatial coverage
-        const topMatchCount = Math.min(matchesWithScores.length, Math.max(MIN_MATCH_COUNT * 2, 30));
-        goodMatches = matchesWithScores.slice(0, topMatchCount).map(item => item.match);
+        // Calculate final coverage area
+        const finalPoints = goodMatches.map(m => keypointsTarget.get(m.queryIdx).pt);
+        const finalArea = calculateConvexHullArea(finalPoints);
+        const imageArea = targetMat.cols * targetMat.rows;
+        const coveragePercent = (finalArea / imageArea) * 100;
         
-        // Calculate coverage statistics
-        const avgSpread = matchesWithScores.slice(0, topMatchCount)
-            .reduce((sum, item) => sum + item.spreadScore, 0) / topMatchCount;
-        const avgCenterDist = matchesWithScores.slice(0, topMatchCount)
-            .reduce((sum, item) => sum + item.distanceToCenter, 0) / topMatchCount;
-        
-        console.log(`Spatial distribution matching: Selected ${goodMatches.length} matches (avg spread: ${avgSpread.toFixed(2)}, avg center dist: ${avgCenterDist.toFixed(0)}px)`);
+        console.log(`Convex hull matching: Selected ${goodMatches.length} matches covering ${coveragePercent.toFixed(1)}% of image area`);
 
         let basePts = [];
         let targetPts = [];
