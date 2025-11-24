@@ -51,11 +51,15 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
         lines = new cv.Mat();
         cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 50, 50, 10);
 
-        // Analyze line angles - frontal images have mostly horizontal/vertical lines
-        // Perspective images have converging lines at various angles
-        let horizontalVerticalCount = 0;
+        // Analyze line angles - frontal images have PRECISE horizontal/vertical lines
+        // Look for exact 90° and 180° angles (right angles)
+        let exactHorizontalCount = 0;  // 0° or 180° (±5°)
+        let exactVerticalCount = 0;    // 90° or 270° (±5°)
+        let nearHorizontalVerticalCount = 0; // ±15° tolerance
         let diagonalCount = 0;
-        const ANGLE_THRESHOLD = 15; // degrees tolerance for horizontal/vertical
+        
+        const EXACT_ANGLE_THRESHOLD = 5;  // Very strict for exact right angles
+        const NEAR_ANGLE_THRESHOLD = 15;  // Relaxed for near-aligned lines
 
         for (let i = 0; i < lines.rows; i++) {
             const x1 = lines.data32S[i * 4];
@@ -63,19 +67,39 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
             const x2 = lines.data32S[i * 4 + 2];
             const y2 = lines.data32S[i * 4 + 3];
 
+            // Calculate angle in degrees (0-180)
             const angle = Math.abs(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI);
-            const normalizedAngle = angle % 90;
-
-            // Check if line is close to horizontal (0°) or vertical (90°)
-            if (normalizedAngle < ANGLE_THRESHOLD || normalizedAngle > (90 - ANGLE_THRESHOLD)) {
-                horizontalVerticalCount++;
-            } else {
+            
+            // Check for exact horizontal (0° or 180°)
+            if (angle < EXACT_ANGLE_THRESHOLD || angle > (180 - EXACT_ANGLE_THRESHOLD)) {
+                exactHorizontalCount++;
+                nearHorizontalVerticalCount++;
+            }
+            // Check for exact vertical (90°)
+            else if (Math.abs(angle - 90) < EXACT_ANGLE_THRESHOLD) {
+                exactVerticalCount++;
+                nearHorizontalVerticalCount++;
+            }
+            // Check for near horizontal/vertical
+            else if (angle < NEAR_ANGLE_THRESHOLD || 
+                     angle > (180 - NEAR_ANGLE_THRESHOLD) || 
+                     Math.abs(angle - 90) < NEAR_ANGLE_THRESHOLD) {
+                nearHorizontalVerticalCount++;
+            }
+            else {
                 diagonalCount++;
             }
         }
 
-        const totalLines = horizontalVerticalCount + diagonalCount;
-        const hvRatio = totalLines > 0 ? horizontalVerticalCount / totalLines : 0;
+        const totalLines = nearHorizontalVerticalCount + diagonalCount;
+        const exactRightAngleCount = exactHorizontalCount + exactVerticalCount;
+        
+        // Ratios for decision making
+        const hvRatio = totalLines > 0 ? nearHorizontalVerticalCount / totalLines : 0;
+        const exactRightAngleRatio = totalLines > 0 ? exactRightAngleCount / totalLines : 0;
+        
+        // Check if lines are parallel (similar angles)
+        const hasParallelLines = exactHorizontalCount > 5 || exactVerticalCount > 5;
 
         // 2. Feature Distribution Analysis
         akaze = new cv.AKAZE();
@@ -98,29 +122,32 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
         const variance = quadrants.reduce((sum, q) => sum + Math.pow(q - avgQuadrant, 2), 0) / 4;
         const coefficientOfVariation = avgQuadrant > 0 ? Math.sqrt(variance) / avgQuadrant : 0;
 
-        // Decision Logic - Based ONLY on image content (no aspect ratio)
-        // Analyze line alignment and feature distribution
+        // Decision Logic - Focus on EXACT right angles (90°/180°) and parallel lines
+        // Frontal images have many precise horizontal/vertical lines
         
         const strongFrontalIndicators = [
-            hvRatio > 0.65,                          // Strong line alignment
-            coefficientOfVariation < 0.30,           // Very uniform distribution
-            hvRatio > 0.60 && coefficientOfVariation < 0.40, // Good alignment + uniform
-            totalLines > 100 && hvRatio > 0.55       // Many well-aligned lines
+            exactRightAngleRatio > 0.40,             // Many exact right angles (±5°)
+            hasParallelLines && exactRightAngleRatio > 0.30, // Parallel lines + good right angles
+            exactRightAngleCount > 20,               // Absolute count of exact right angles
+            hvRatio > 0.70 && exactRightAngleRatio > 0.25, // Very aligned + some exact angles
+            coefficientOfVariation < 0.30 && exactRightAngleRatio > 0.20 // Uniform + exact angles
         ].filter(Boolean).length;
 
         const moderateFrontalIndicators = [
-            hvRatio > 0.55,                          // Moderate line alignment
+            exactRightAngleRatio > 0.25,             // Moderate exact right angles
+            hvRatio > 0.60,                          // Good general alignment
+            hasParallelLines && hvRatio > 0.50,      // Parallel lines + moderate alignment
             coefficientOfVariation < 0.40,           // Moderate uniformity
-            totalLines > 80 && hvRatio > 0.50,       // Many structured lines
-            hvRatio > 0.50 && coefficientOfVariation < 0.50 // Combined moderate values
+            exactRightAngleCount > 10 && hvRatio > 0.50, // Some exact angles + alignment
+            totalLines > 80 && exactRightAngleRatio > 0.15 // Many lines with some exact angles
         ].filter(Boolean).length;
 
-        // Frontal if: 2+ strong indicators OR 3 moderate indicators
+        // Frontal if: 2+ strong indicators OR 3+ moderate indicators
         const isFrontal = 
             strongFrontalIndicators >= 2 ||
             moderateFrontalIndicators >= 3;
 
-        console.log(`Perspective Detection: hvRatio=${hvRatio.toFixed(2)}, cv=${coefficientOfVariation.toFixed(2)}, lines=${totalLines}, strong=${strongFrontalIndicators}, moderate=${moderateFrontalIndicators} -> ${isFrontal ? 'FRONTAL' : 'PERSPECTIVE'}`);
+        console.log(`Perspective Detection: hvRatio=${hvRatio.toFixed(2)}, exactRA=${exactRightAngleRatio.toFixed(2)}, exactCount=${exactRightAngleCount}, parallel=${hasParallelLines}, cv=${coefficientOfVariation.toFixed(2)}, lines=${totalLines}, strong=${strongFrontalIndicators}, moderate=${moderateFrontalIndicators} -> ${isFrontal ? 'FRONTAL' : 'PERSPECTIVE'}`);
 
         // Return true if perspective correction is needed (NOT frontal)
         return !isFrontal;
