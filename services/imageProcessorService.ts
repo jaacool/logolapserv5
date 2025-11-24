@@ -199,10 +199,43 @@ const performRobustAlignment = (
             throw new Error(`Not enough good matches found for alignment - ${goodMatches.length}/${MIN_MATCH_COUNT}.`);
         }
 
-        // Sort matches by distance and keep only the best ones for more robust estimation
-        goodMatches.sort((a, b) => a.distance - b.distance);
-        const topMatchCount = Math.min(goodMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
-        goodMatches = goodMatches.slice(0, topMatchCount);
+        // Center-weighted matching: When multiple logos exist, prefer the one closest to center
+        // This helps when there's a logo wall or multiple logo variations in one image
+        if (goodMatches.length > MIN_MATCH_COUNT * 3) {
+            const imageCenterX = targetMat.cols / 2;
+            const imageCenterY = targetMat.rows / 2;
+            
+            // Calculate centroid of each match's position in target image
+            const matchesWithCenterDistance = goodMatches.map(match => {
+                const pt = keypointsTarget.get(match.queryIdx).pt;
+                const distanceToCenter = Math.sqrt(
+                    Math.pow(pt.x - imageCenterX, 2) + 
+                    Math.pow(pt.y - imageCenterY, 2)
+                );
+                return { match, distanceToCenter };
+            });
+            
+            // Sort by center distance to find the central cluster
+            matchesWithCenterDistance.sort((a, b) => a.distanceToCenter - b.distanceToCenter);
+            
+            // Take matches from the central region (top 60% closest to center)
+            const centralMatchCount = Math.floor(matchesWithCenterDistance.length * 0.6);
+            const centralMatches = matchesWithCenterDistance
+                .slice(0, centralMatchCount)
+                .map(item => item.match);
+            
+            // Now sort these central matches by quality (distance)
+            centralMatches.sort((a, b) => a.distance - b.distance);
+            const topMatchCount = Math.min(centralMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
+            goodMatches = centralMatches.slice(0, topMatchCount);
+            
+            console.log(`Center-weighted matching: Selected ${goodMatches.length} matches from central region`);
+        } else {
+            // Standard approach: Sort matches by distance and keep only the best ones
+            goodMatches.sort((a, b) => a.distance - b.distance);
+            const topMatchCount = Math.min(goodMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
+            goodMatches = goodMatches.slice(0, topMatchCount);
+        }
 
         let basePts = [];
         let targetPts = [];

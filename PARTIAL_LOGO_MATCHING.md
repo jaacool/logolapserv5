@@ -24,12 +24,34 @@ Wenn ein Master-Logo mehr Elemente enthält als ein Target-Bild (z.B. Master: "L
    RANSAC_THRESHOLD = 5.0 (statt 3.0)
    ```
 
-3. **Top-Match-Selektion**
+3. **Center-Weighted Matching** (NEU!)
    ```typescript
-   // Sortiere Matches nach Distanz, behalte nur die besten
-   goodMatches.sort((a, b) => a.distance - b.distance);
-   const topMatchCount = Math.min(goodMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
-   goodMatches = goodMatches.slice(0, topMatchCount);
+   // Bei vielen Matches (>24): Bevorzuge Matches nahe der Bildmitte
+   // Hilft bei Logo-Wänden oder mehreren Logo-Varianten im Bild
+   if (goodMatches.length > MIN_MATCH_COUNT * 3) {
+       const imageCenterX = targetMat.cols / 2;
+       const imageCenterY = targetMat.rows / 2;
+       
+       // Berechne Distanz jedes Matches zur Bildmitte
+       const matchesWithCenterDistance = goodMatches.map(match => {
+           const pt = keypointsTarget.get(match.queryIdx).pt;
+           const distanceToCenter = Math.sqrt(
+               Math.pow(pt.x - imageCenterX, 2) + 
+               Math.pow(pt.y - imageCenterY, 2)
+           );
+           return { match, distanceToCenter };
+       });
+       
+       // Wähle die 60% zentralsten Matches
+       matchesWithCenterDistance.sort((a, b) => a.distanceToCenter - b.distanceToCenter);
+       const centralMatches = matchesWithCenterDistance
+           .slice(0, Math.floor(matchesWithCenterDistance.length * 0.6))
+           .map(item => item.match);
+       
+       // Sortiere diese nach Qualität
+       centralMatches.sort((a, b) => a.distance - b.distance);
+       goodMatches = centralMatches.slice(0, Math.min(centralMatches.length, 30));
+   }
    ```
 
 4. **Adaptive Fallback-Strategie**
@@ -74,8 +96,8 @@ const alignResult = performRobustAlignment(templateMat, targetMat, false, true, 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ 1. Feature Detection (AKAZE mit 0.0005 threshold)      │
-│    → Mehr Features als Standard                         │
+│ 1. Feature Detection (AKAZE)                           │
+│    → Standard AKAZE für Kompatibilität                  │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -84,22 +106,28 @@ const alignResult = performRobustAlignment(templateMat, targetMat, false, true, 
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 3. Top-Match Selection                                  │
-│    → Sortiere nach Distanz, behalte Top 30              │
+│ 3. Center-Weighted Selection (wenn > 24 Matches)       │
+│    → Bevorzuge Matches nahe Bildmitte (60% zentral)    │
+│    → Hilft bei Logo-Wänden & mehreren Varianten        │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 4. Transform Estimation mit RANSAC (threshold 5.0)     │
+│ 4. Top-Match Selection                                  │
+│    → Sortiere nach Qualität, behalte Top 30             │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 5. Transform Estimation mit RANSAC (threshold 5.0)     │
 │    → Höhere Toleranz für Outliers                       │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 5. Inlier Check & Adaptive Fallback                    │
+│ 6. Inlier Check & Adaptive Fallback                    │
 │    → Falls < 30% Inliers: Homography → Affine          │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 6. Optional: Iterative Refinement                      │
+│ 7. Optional: Iterative Refinement                      │
 │    → Warp → Re-detect → Re-match → Combine Transforms  │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -119,17 +147,24 @@ Der robuste Algorithmus wird bei allen Levels verwendet, passt sich aber an:
 ✅ **Bessere Partial Matching**: Funktioniert auch wenn Master mehr Elemente hat  
 ✅ **Robustere Schätzung**: Höhere RANSAC-Toleranz für Outliers  
 ✅ **Adaptive Strategie**: Automatischer Fallback bei schlechten Matches  
-✅ **Mehr Features**: Niedrigerer AKAZE-Threshold findet mehr Keypoints  
+✅ **Center-Weighted**: Bevorzugt zentrale Logos bei Logo-Wänden  
+✅ **Multi-Logo-Support**: Ignoriert periphere Logo-Varianten automatisch  
 ✅ **Debugging**: Console Logs zeigen Feature-Counts und Inlier-Ratios  
 
 ## Testing
 
-Teste mit:
+### Szenario 1: Partial Logo Matching
 1. Master: Logo mit vielen Elementen (z.B. Luna + Kreis + Text)
 2. Target: Logo mit weniger Elementen (z.B. nur Luna)
 3. Erwartung: Keine Verzerrung, saubere Ausrichtung
 
+### Szenario 2: Logo Wall / Multiple Logos
+1. Master: Einzelnes Logo in der Mitte
+2. Target: Mehrere Logo-Varianten (z.B. Logo-Wand mit verschiedenen Versionen)
+3. Erwartung: Matcht das zentrale Logo, ignoriert periphere Logos
+
 Überprüfe Console für:
 - Feature counts (sollten höher sein als vorher)
 - Good matches (sollte >= 8 sein)
+- "Center-weighted matching" Meldung bei Logo-Wänden (>24 Matches)
 - Inlier ratios (sollte >= 30% sein für Homography)
