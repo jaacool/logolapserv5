@@ -6,7 +6,8 @@ const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
 
 export const processWithNanobanana = async (
     imageUrl: string, 
-    apiKey: string
+    apiKey: string,
+    resolution: number = 1024
 ): Promise<string> => {
     
     if (!apiKey) {
@@ -15,8 +16,8 @@ export const processWithNanobanana = async (
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // Resize to 1024x1024 max to be safe with quotas/latency
-    const resizedImageUrl = await resizeImage(imageUrl, 1024, 1024);
+    // Resize to specified resolution
+    const resizedImageUrl = await resizeImage(imageUrl, resolution, resolution);
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
 
     // Prompt designed to encourage outpainting/filling of black borders

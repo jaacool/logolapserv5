@@ -11,7 +11,7 @@ import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon } from './components/Icons'
 import { Spinner } from './components/Spinner';
 import { DebugToggle } from './components/DebugToggle';
 import { StabilitySlider } from './components/StabilitySlider';
-import { AIEdgeFillToggle } from './components/AIEdgeFillToggle';
+import { EdgeFillSelector } from './components/EdgeFillSelector';
 import { AspectRatioSelector } from './components/AspectRatioSelector';
 import { AIVariationsToggle } from './components/AIVariationsToggle';
 import { VariationSelector } from './components/VariationSelector';
@@ -73,6 +73,7 @@ export default function App() {
   const isRefinementEnabled = stabilityLevel >= 2;
   const isEnsembleCorrectionEnabled = stabilityLevel >= 3;
   const [isAiEdgeFillEnabled, setIsAiEdgeFillEnabled] = useState(false);
+  const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
   const [isAiVariationsEnabled, setIsAiVariationsEnabled] = useState(false);
   const [isSimpleMatchEnabled, setIsSimpleMatchEnabled] = useState(false);
   const [numVariations, setNumVariations] = useState<number>(1);
@@ -618,7 +619,7 @@ export default function App() {
                     // Actually processImageLocally processes master too (crops/pads).
                     // So we should fill everything.
                     try {
-                         const filledUrl = await processWithNanobanana(file.processedUrl, apiKey);
+                         const filledUrl = await processWithNanobanana(file.processedUrl, apiKey, edgeFillResolution);
                          filledResults.push({ ...file, processedUrl: filledUrl });
                     } catch (fillErr) {
                         console.error("AI Edge Fill failed for", file.originalName, fillErr);
@@ -713,6 +714,37 @@ export default function App() {
         aspectRatio, selectedSnippets, apiKey, contextImageFile
     ]);
     
+  // Helper to format time nicely (e.g. "1m 30s" or "45s")
+  const formatTime = (totalSeconds: number) => {
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  };
+
+  // Calculate total estimated time for the UI button display
+  const totalEstimatedTime = useMemo(() => {
+      if (!uploadedFiles.length) return 0;
+      
+      const REAL_TIME_PER_LOCAL_ALIGNMENT = 1.2;
+      const REAL_TIME_PER_AI_FILL = 18.0; 
+      const REAL_TIME_PER_AI_GENERATION = 17.0;
+
+      let total = uploadedFiles.length * REAL_TIME_PER_LOCAL_ALIGNMENT;
+      
+      if (isAiEdgeFillEnabled) {
+          total += uploadedFiles.length * REAL_TIME_PER_AI_FILL;
+      }
+      
+      if (isAiVariationsEnabled) {
+          total += numVariations * REAL_TIME_PER_AI_GENERATION;
+      }
+      
+      return Math.ceil(total);
+  }, [uploadedFiles.length, isAiEdgeFillEnabled, isAiVariationsEnabled, numVariations]);
+
+  const formattedEstimatedTime = formatTime(totalEstimatedTime);
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
       <header className="w-full max-w-7xl mx-auto flex flex-col items-center mb-6">
@@ -725,19 +757,12 @@ export default function App() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-3">
-            <button
-              onClick={handleStartAllOver}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
-              title="Start all over - reset everything"
-            >
-              Start All Over
-            </button>
             <span className="text-xs text-gray-500 font-medium">v5.2</span>
           </div>
         </div>
       </header>
 
-      <main className="w-full max-w-7xl mx-auto flex-grow flex flex-col items-center justify-center">
+      <main className="w-full max-w-[1800px] mx-auto flex-grow flex flex-col items-center justify-center h-full">
         {error && (
           <div className="w-full bg-red-800/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative mb-6" role="alert">
             <strong className="font-bold">Error: </strong>
@@ -780,106 +805,131 @@ export default function App() {
           </div>
         )}
         
-        {cvReady && !isProcessing && processedFiles.length > 0 && (
-            <Previewer 
-                files={processedFiles}
-                originalFiles={uploadedFiles}
-                masterFileId={masterFileId}
-                isDebugMode={isDebugMode}
-                onSetDebugMode={setIsDebugMode}
-                onBackToSelection={handleBackToSelection}
-                aspectRatio={aspectRatio}
-                onDelete={handleDeleteProcessedFile}
-                onPerspectiveFix={handleFixPerspective}
-                onSimpleMatchFix={handleSimpleMatchFix}
-                fixingImageId={fixingImageId}
-                onExport={handleExport}
-                isExporting={isExporting}
-            />
-        )}
-        
-        {cvReady && !isProcessing && processedFiles.length === 0 && (
-          <div className="w-full flex flex-col items-center gap-8">
+        {/* MAIN CONTENT AREA */}
+        {cvReady && !isProcessing && (
+          <>
             {uploadedFiles.length === 0 ? (
-              <FileDropzone onDrop={handleFilesDrop} />
+              <div className="w-full max-w-4xl">
+                <FileDropzone onDrop={handleFilesDrop} />
+              </div>
             ) : (
-                <ImageGrid 
-                    files={uploadedFiles} 
-                    masterFileId={masterFileId} 
-                    onSelectMaster={handleSelectMaster} 
-                    onToggleSimpleMatch={handleToggleSimpleMatch}
-                    onDelete={handleDeleteUploadedFile}
-                />
-            )}
-
-            {uploadedFiles.length > 0 && (
-              <>
-                <div className="w-full border-t border-gray-700 my-4"></div>
-                <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
-                    
-                    <div className="flex flex-col items-start gap-6 p-4 bg-gray-800/50 rounded-lg h-full">
-                         <p className="text-left text-lg text-gray-300 mb-2">2. Configure alignment settings.</p>
-                         <StabilitySlider value={stabilityLevel} onChange={setStabilityLevel} />
-                         <AIEdgeFillToggle isChecked={isAiEdgeFillEnabled} onChange={setIsAiEdgeFillEnabled} />
-                    </div>
-
-                    <div className="flex flex-col items-center gap-4 p-4 bg-gray-800/50 rounded-lg h-full">
+                <div className="w-full flex flex-col lg:flex-row gap-8 items-start h-full">
+                    {/* LEFT SIDEBAR - Settings (Always Visible) */}
+                    <div className="w-full lg:w-[360px] flex-shrink-0 flex flex-col gap-6 p-6 bg-gray-800/40 rounded-xl border border-gray-700/50 sticky top-6 backdrop-blur-sm">
+                        <h2 className="text-xl font-bold text-white mb-2">Settings</h2>
+                        
+                        {/* Settings Sections */}
+                        <StabilitySlider value={stabilityLevel} onChange={setStabilityLevel} />
+                        
+                        <div className="h-px bg-gray-700/50" />
+                        
+                        <EdgeFillSelector 
+                            value={isAiEdgeFillEnabled ? 'pro' : 'fast'} 
+                            onChange={(val) => setIsAiEdgeFillEnabled(val === 'pro')}
+                            resolution={edgeFillResolution}
+                            onResolutionChange={setEdgeFillResolution}
+                            imageCount={uploadedFiles.length}
+                        />
+                        
+                        <div className="h-px bg-gray-700/50" />
+                        
                         <AspectRatioSelector selectedRatio={aspectRatio} onSelectRatio={setAspectRatio} />
+                        
+                        {/* AI Variations Section */}
+                        <div className="pt-2">
+                            <AIVariationsToggle isChecked={isAiVariationsEnabled} onChange={setIsAiVariationsEnabled} />
+                            
+                            {isAiVariationsEnabled && (
+                                <div className="mt-4 space-y-4 animate-fade-in">
+                                    <VariationSelector selectedValue={numVariations} onSelectValue={setNumVariations} max={12}/>
+                                    <PromptCustomizer 
+                                        snippets={promptSnippets}
+                                        selectedSnippets={selectedSnippets}
+                                        onSelectionChange={handleSnippetSelectionChange}
+                                        onAddSnippet={handleAddSnippet}
+                                    />
+                                    <ContextImageInput 
+                                        selectedImage={contextImageFile} 
+                                        onImageSelect={setContextImageFile} 
+                                        isDisabled={!isAiVariationsEnabled}
+                                    />
+                                    <ContextInput 
+                                        value={projectContext} 
+                                        onChange={setProjectContext} 
+                                        isDisabled={!isAiVariationsEnabled}
+                                    />
+                                    {/* API Key Input */}
+                                    <div className="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
+                                        <label htmlFor="api-key-input" className="text-xs text-gray-400 font-medium block mb-1.5">Google AI API Key</label>
+                                        <input 
+                                            id="api-key-input"
+                                            type="password"
+                                            value={apiKey}
+                                            onChange={(e) => handleApiKeyChange(e.target.value)}
+                                            placeholder="Paste API key..."
+                                            className="w-full bg-gray-900 text-gray-200 border border-gray-600 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* Main Action Button */}
+                        {processedFiles.length > 0 ? (
+                           <button
+                              onClick={handleStartAllOver}
+                              className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-red-600 rounded-xl shadow-lg hover:shadow-red-500/20 hover:bg-red-700 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+                           >
+                              Start All Over
+                              <span className="block text-xs font-normal opacity-80 mt-1">
+                                 Reset to upload new files
+                              </span>
+                           </button>
+                        ) : (
+                           <button
+                              onClick={handleProcessImages}
+                              disabled={!masterFileId || (isAiVariationsEnabled && !apiKey)}
+                              className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl shadow-lg hover:shadow-cyan-500/20 hover:from-cyan-500 hover:to-blue-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+                           >
+                              Align & Generate
+                              <span className="block text-xs font-normal opacity-80 mt-1">
+                                 Est. time: ~{formattedEstimatedTime}
+                              </span>
+                           </button>
+                        )}
                     </div>
 
-                    <div className="flex flex-col items-center gap-4 p-4 bg-gray-800/50 rounded-lg h-full">
-                        <p className="text-center text-lg text-gray-300 mb-2">4. (Optional) Generate AI variations.</p>
-                        <AIVariationsToggle isChecked={isAiVariationsEnabled} onChange={setIsAiVariationsEnabled} />
-                        {isAiVariationsEnabled && (
-                            <div className="w-full flex flex-col items-center gap-4 animate-fade-in">
-                                <VariationSelector selectedValue={numVariations} onSelectValue={setNumVariations} max={12}/>
-                                <PromptCustomizer 
-                                    snippets={promptSnippets}
-                                    selectedSnippets={selectedSnippets}
-                                    onSelectionChange={handleSnippetSelectionChange}
-                                    onAddSnippet={handleAddSnippet}
-                                />
-                                <ContextImageInput 
-                                    selectedImage={contextImageFile} 
-                                    onImageSelect={setContextImageFile} 
-                                    isDisabled={!isAiVariationsEnabled}
-                                />
-                                <ContextInput 
-                                    value={projectContext} 
-                                    onChange={setProjectContext} 
-                                    isDisabled={!isAiVariationsEnabled}
-                                />
-                                <div className="text-center p-3 rounded-md bg-gray-700/50 border border-gray-600 w-full max-w-xs flex flex-col gap-2">
-                                    <label htmlFor="api-key-input" className="text-sm text-gray-300 font-medium">Google AI API Key</label>
-                                    <input 
-                                        id="api-key-input"
-                                        type="password"
-                                        value={apiKey}
-                                        onChange={(e) => handleApiKeyChange(e.target.value)}
-                                        placeholder="Paste your API key here"
-                                        className="bg-gray-900 text-gray-200 border border-gray-500 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500 w-full"
-                                    />
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-300">Get your key here</a>. Your key is stored locally.
-                                    </p>
-                                </div>
-                            </div>
+                    {/* RIGHT SIDE - Content */}
+                    <div className="flex-1 w-full min-w-0 overflow-y-auto">
+                        {processedFiles.length > 0 ? (
+                            <Previewer 
+                                files={processedFiles}
+                                originalFiles={uploadedFiles}
+                                masterFileId={masterFileId}
+                                isDebugMode={isDebugMode}
+                                onSetDebugMode={setIsDebugMode}
+                                onBackToSelection={handleBackToSelection}
+                                aspectRatio={aspectRatio}
+                                onDelete={handleDeleteProcessedFile}
+                                onPerspectiveFix={handleFixPerspective}
+                                onSimpleMatchFix={handleSimpleMatchFix}
+                                fixingImageId={fixingImageId}
+                                onExport={handleExport}
+                                isExporting={isExporting}
+                            />
+                        ) : (
+                            <ImageGrid 
+                                files={uploadedFiles} 
+                                masterFileId={masterFileId} 
+                                onSelectMaster={handleSelectMaster} 
+                                onToggleSimpleMatch={handleToggleSimpleMatch}
+                                onDelete={handleDeleteUploadedFile}
+                            />
                         )}
                     </div>
                 </div>
-
-                <div className="w-full border-t border-gray-700 my-4"></div>
-                
-                <button
-                  onClick={handleProcessImages}
-                  disabled={!masterFileId || (isAiVariationsEnabled && !apiKey)}
-                  className="px-8 py-4 text-xl font-bold text-white bg-cyan-600 rounded-lg shadow-lg hover:bg-cyan-500 transition-all duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:shadow-none focus:outline-none focus:ring-4 focus:ring-cyan-400/50"
-                >
-                  Align & Generate
-                </button>
-              </>
             )}
-          </div>
+          </>
         )}
       </main>
     </div>

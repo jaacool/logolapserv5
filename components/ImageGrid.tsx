@@ -24,9 +24,17 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
   
   return (
     <div className="w-full">
-      <p className="text-center text-lg text-gray-300 mb-2">1. Select the master image to align others against.</p>
-      <p className="text-center text-sm text-gray-400 mb-4">2. Click the <SimpleMatchIcon className="w-4 h-4 inline-block -mt-1"/> icon to toggle Simple Match mode (rotation/scale only). Default is Perspective Correction.</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+      <div className="mb-6 space-y-2">
+        <p className="text-lg text-gray-300">
+          <span className="font-bold text-cyan-400">1.</span> Select a master
+        </p>
+        <p className="text-sm text-gray-400 flex items-center gap-2">
+          <span className="font-bold text-cyan-400">2.</span> 
+          If the picture is taken frontal (without perspective shift) please click on the 
+          <span className="inline-flex items-center justify-center w-6 h-6 bg-black/50 rounded-full border border-gray-600"><SimpleMatchIcon className="w-4 h-4 text-gray-300"/></span>
+        </p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
         {files.map((file) => {
           const isMaster = file.id === masterFileId;
           const needsSimpleMatch = file.needsSimpleMatch;
