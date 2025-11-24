@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -179,18 +179,35 @@ export default function App() {
         .filter(file => ['image/png', 'image/jpeg'].includes(file.type))
         .map(async (file) => {
           const imageElement = await fileToImageElement(file);
+          
+          // Automatic perspective detection
+          let needsPerspective = true;
+          let needsSimple = false;
+          
+          if (cvReady) {
+            try {
+              needsPerspective = detectPerspectiveDistortion(imageElement);
+              needsSimple = !needsPerspective; // If no perspective needed, use simple match
+              console.log(`Auto-detected ${file.name}: ${needsPerspective ? 'PERSPECTIVE' : 'FRONTAL/SIMPLE'}`);
+            } catch (err) {
+              console.warn('Auto-detection failed, defaulting to perspective:', err);
+              needsPerspective = true;
+              needsSimple = false;
+            }
+          }
+          
           return {
             id: `${file.name}-${file.lastModified}`,
             file,
             previewUrl: imageElement.src,
             imageElement: imageElement,
-            needsPerspectiveCorrection: true,
-            needsSimpleMatch: false,
+            needsPerspectiveCorrection: needsPerspective,
+            needsSimpleMatch: needsSimple,
           };
         })
     );
     setUploadedFiles(prev => [...prev, ...newFiles]);
-  }, []);
+  }, [cvReady]);
 
   const handleToggleSimpleMatch = useCallback((fileId: string) => {
     setUploadedFiles(prevFiles => 

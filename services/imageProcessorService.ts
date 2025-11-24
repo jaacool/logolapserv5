@@ -22,6 +22,123 @@ interface ProcessResult {
     debugUrl: string;
 }
 
+// Automatic detection: Is this image frontal/screenshot or has perspective distortion?
+// Returns true if image needs perspective correction, false if it's frontal
+export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean => {
+    let mat: any;
+    let gray: any;
+    let edges: any;
+    let lines: any;
+    let akaze: any;
+    let clahe: any;
+    const keypoints = new cv.KeyPointVector();
+    const descriptors = new cv.Mat();
+
+    try {
+        mat = loadImageToMat(image);
+        gray = new cv.Mat();
+        cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+
+        // Apply CLAHE for better edge detection
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        clahe.apply(gray, gray);
+
+        // 1. Edge Analysis: Detect strong edges and lines
+        edges = new cv.Mat();
+        cv.Canny(gray, edges, 50, 150);
+
+        // Detect lines using Hough Transform
+        lines = new cv.Mat();
+        cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 50, 50, 10);
+
+        // Analyze line angles - frontal images have mostly horizontal/vertical lines
+        // Perspective images have converging lines at various angles
+        let horizontalVerticalCount = 0;
+        let diagonalCount = 0;
+        const ANGLE_THRESHOLD = 15; // degrees tolerance for horizontal/vertical
+
+        for (let i = 0; i < lines.rows; i++) {
+            const x1 = lines.data32S[i * 4];
+            const y1 = lines.data32S[i * 4 + 1];
+            const x2 = lines.data32S[i * 4 + 2];
+            const y2 = lines.data32S[i * 4 + 3];
+
+            const angle = Math.abs(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI);
+            const normalizedAngle = angle % 90;
+
+            // Check if line is close to horizontal (0°) or vertical (90°)
+            if (normalizedAngle < ANGLE_THRESHOLD || normalizedAngle > (90 - ANGLE_THRESHOLD)) {
+                horizontalVerticalCount++;
+            } else {
+                diagonalCount++;
+            }
+        }
+
+        const totalLines = horizontalVerticalCount + diagonalCount;
+        const hvRatio = totalLines > 0 ? horizontalVerticalCount / totalLines : 0;
+
+        // 2. Feature Distribution Analysis
+        akaze = new cv.AKAZE();
+        akaze.detectAndCompute(gray, new cv.Mat(), keypoints, descriptors);
+
+        // Analyze keypoint distribution - frontal images have more uniform distribution
+        // Perspective images have keypoints concentrated in certain areas
+        const centerX = mat.cols / 2;
+        const centerY = mat.rows / 2;
+        const quadrants = [0, 0, 0, 0]; // top-left, top-right, bottom-left, bottom-right
+
+        for (let i = 0; i < keypoints.size(); i++) {
+            const pt = keypoints.get(i).pt;
+            const quadrantIndex = (pt.x < centerX ? 0 : 1) + (pt.y < centerY ? 0 : 2);
+            quadrants[quadrantIndex]++;
+        }
+
+        // Calculate distribution uniformity (lower variance = more uniform = frontal)
+        const avgQuadrant = quadrants.reduce((a, b) => a + b, 0) / 4;
+        const variance = quadrants.reduce((sum, q) => sum + Math.pow(q - avgQuadrant, 2), 0) / 4;
+        const coefficientOfVariation = avgQuadrant > 0 ? Math.sqrt(variance) / avgQuadrant : 0;
+
+        // 3. Aspect Ratio Check - screenshots often have standard aspect ratios
+        const aspectRatio = mat.cols / mat.rows;
+        const isStandardAspectRatio = 
+            Math.abs(aspectRatio - 16/9) < 0.05 ||   // 16:9
+            Math.abs(aspectRatio - 4/3) < 0.05 ||    // 4:3
+            Math.abs(aspectRatio - 1) < 0.05 ||      // 1:1
+            Math.abs(aspectRatio - 9/16) < 0.05;     // 9:16 (portrait)
+
+        // Decision Logic
+        // Frontal/Screenshot indicators:
+        // - High ratio of horizontal/vertical lines (> 0.7)
+        // - Low feature distribution variance (< 0.4)
+        // - Standard aspect ratio
+        
+        const isFrontal = 
+            (hvRatio > 0.7 && coefficientOfVariation < 0.4) ||  // Strong frontal indicators
+            (hvRatio > 0.75 && isStandardAspectRatio) ||        // Very aligned + standard ratio
+            (coefficientOfVariation < 0.3 && isStandardAspectRatio); // Very uniform + standard ratio
+
+        console.log(`Perspective Detection: hvRatio=${hvRatio.toFixed(2)}, cv=${coefficientOfVariation.toFixed(2)}, standardAR=${isStandardAspectRatio}, lines=${totalLines} -> ${isFrontal ? 'FRONTAL' : 'PERSPECTIVE'}`);
+
+        // Return true if perspective correction is needed (NOT frontal)
+        return !isFrontal;
+
+    } catch (error) {
+        console.error('Perspective detection failed:', error);
+        // Default: assume perspective correction needed (safer)
+        return true;
+    } finally {
+        // Cleanup
+        if (mat && !mat.isDeleted()) mat.delete();
+        if (gray && !gray.isDeleted()) gray.delete();
+        if (edges && !edges.isDeleted()) edges.delete();
+        if (lines && !lines.isDeleted()) lines.delete();
+        if (keypoints && !keypoints.isDeleted()) keypoints.delete();
+        if (descriptors && !descriptors.isDeleted()) descriptors.delete();
+        if (akaze && akaze.delete) akaze.delete();
+        if (clahe && clahe.delete) clahe.delete();
+    }
+};
+
 // Simple Match Algorithm - only rotation, position and uniform scaling (no perspective distortion)
 const performSimpleAlignment = (
     baseMat: any,
@@ -247,92 +364,57 @@ const performRobustAlignment = (
             throw new Error(`Not enough good matches found for alignment - ${goodMatches.length}/${MIN_MATCH_COUNT}.`);
         }
 
-        // CONVEX HULL AREA MAXIMIZATION: Select matches that cover the largest geometric area
-        // This ensures we align the main/large parts of the logo, not just small detailed features
-        
-        // Sort matches by quality first
-        goodMatches.sort((a, b) => a.distance - b.distance);
-        
-        // Helper: Calculate convex hull area of a set of points
-        const calculateConvexHullArea = (points: {x: number, y: number}[]): number => {
-            if (points.length < 3) return 0;
+        // Center-weighted matching: When multiple logos exist, prefer the one closest to center
+        // This helps when there's a logo wall or multiple logo variations in one image
+        // Activate earlier (12+ matches) for better multi-logo detection
+        if (goodMatches.length >= MIN_MATCH_COUNT * 1.5) {
+            const imageCenterX = targetMat.cols / 2;
+            const imageCenterY = targetMat.rows / 2;
             
-            // Simple convex hull using gift wrapping (Jarvis march)
-            const hull: {x: number, y: number}[] = [];
+            // Calculate centroid of each match's position in target image
+            const matchesWithCenterDistance = goodMatches.map(match => {
+                const pt = keypointsTarget.get(match.queryIdx).pt;
+                const distanceToCenter = Math.sqrt(
+                    Math.pow(pt.x - imageCenterX, 2) + 
+                    Math.pow(pt.y - imageCenterY, 2)
+                );
+                return { match, distanceToCenter, pt };
+            });
             
-            // Find leftmost point
-            let leftmost = 0;
-            for (let i = 1; i < points.length; i++) {
-                if (points[i].x < points[leftmost].x) leftmost = i;
-            }
+            // Sort by center distance to find the central cluster
+            matchesWithCenterDistance.sort((a, b) => a.distanceToCenter - b.distanceToCenter);
             
-            let p = leftmost;
-            do {
-                hull.push(points[p]);
-                let q = (p + 1) % points.length;
-                
-                for (let i = 0; i < points.length; i++) {
-                    const cross = (points[q].x - points[p].x) * (points[i].y - points[p].y) - 
-                                  (points[q].y - points[p].y) * (points[i].x - points[p].x);
-                    if (cross < 0) q = i;
-                }
-                p = q;
-            } while (p !== leftmost && hull.length < points.length);
+            // Take matches from the central region (top 40% closest to center for stronger centering)
+            const centralMatchCount = Math.max(
+                MIN_MATCH_COUNT,
+                Math.floor(matchesWithCenterDistance.length * 0.4)
+            );
+            const centralMatches = matchesWithCenterDistance
+                .slice(0, centralMatchCount)
+                .map(item => item.match);
             
-            // Calculate area using shoelace formula
-            let area = 0;
-            for (let i = 0; i < hull.length; i++) {
-                const j = (i + 1) % hull.length;
-                area += hull[i].x * hull[j].y;
-                area -= hull[j].x * hull[i].y;
-            }
-            return Math.abs(area) / 2;
-        };
-        
-        // Greedy selection: Build match set that maximizes convex hull area
-        const selectedMatches = [];
-        const candidateMatches = [...goodMatches];
-        
-        // Start with best quality matches
-        selectedMatches.push(candidateMatches[0]);
-        selectedMatches.push(candidateMatches[1]);
-        selectedMatches.push(candidateMatches[2]);
-        
-        // Iteratively add matches that maximize the convex hull area
-        while (selectedMatches.length < Math.min(candidateMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30))) {
-            let bestMatch = null;
-            let bestArea = 0;
+            // Calculate average position of central matches to verify cluster coherence
+            const avgX = matchesWithCenterDistance.slice(0, centralMatchCount)
+                .reduce((sum, item) => sum + item.pt.x, 0) / centralMatchCount;
+            const avgY = matchesWithCenterDistance.slice(0, centralMatchCount)
+                .reduce((sum, item) => sum + item.pt.y, 0) / centralMatchCount;
+            const clusterCenterDist = Math.sqrt(
+                Math.pow(avgX - imageCenterX, 2) + 
+                Math.pow(avgY - imageCenterY, 2)
+            );
             
-            for (const candidate of candidateMatches) {
-                if (selectedMatches.includes(candidate)) continue;
-                
-                // Test adding this match
-                const testSet = [...selectedMatches, candidate];
-                const points = testSet.map(m => keypointsTarget.get(m.queryIdx).pt);
-                const area = calculateConvexHullArea(points);
-                
-                if (area > bestArea) {
-                    bestArea = area;
-                    bestMatch = candidate;
-                }
-            }
+            // Now sort these central matches by quality (distance)
+            centralMatches.sort((a, b) => a.distance - b.distance);
+            const topMatchCount = Math.min(centralMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
+            goodMatches = centralMatches.slice(0, topMatchCount);
             
-            if (bestMatch) {
-                selectedMatches.push(bestMatch);
-            } else {
-                break;
-            }
+            console.log(`Center-weighted matching: Selected ${goodMatches.length} matches from central region (cluster center: ${clusterCenterDist.toFixed(0)}px from image center)`);
+        } else {
+            // Standard approach: Sort matches by distance and keep only the best ones
+            goodMatches.sort((a, b) => a.distance - b.distance);
+            const topMatchCount = Math.min(goodMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
+            goodMatches = goodMatches.slice(0, topMatchCount);
         }
-        
-        goodMatches = selectedMatches;
-        
-        // Calculate final coverage area
-        const finalPoints = goodMatches.map(m => keypointsTarget.get(m.queryIdx).pt);
-        const finalArea = calculateConvexHullArea(finalPoints);
-        const imageArea = targetMat.cols * targetMat.rows;
-        const coveragePercent = (finalArea / imageArea) * 100;
-        
-        console.log(`Convex hull matching: Selected ${goodMatches.length} matches covering ${coveragePercent.toFixed(1)}% of image area`);
 
         let basePts = [];
         let targetPts = [];
