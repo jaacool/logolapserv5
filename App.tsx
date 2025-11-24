@@ -66,11 +66,12 @@ export default function App() {
   const [elapsedTime, setElapsedTime] = useState(0); // Track actual elapsed time in seconds
   const [cvReady, setCvReady] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
-  const [stabilityLevel, setStabilityLevel] = useState<number>(3); // 1=P, 2=P+I, 3=P+I+E
+  const [stabilityLevel, setStabilityLevel] = useState<number>(3); // 1=I, 2=P+I, 3=P+I+E
   // Greedy mode is always disabled but kept for future use
   const isGreedyMode = false;
   // Derived states from stabilityLevel
-  const isRefinementEnabled = stabilityLevel >= 2;
+  const isRefinementEnabled = stabilityLevel >= 1; // Refinement active from level 1
+  const isPerspectiveCorrectionEnabled = stabilityLevel >= 2; // Perspective from level 2
   const isEnsembleCorrectionEnabled = stabilityLevel >= 3;
   const [isAiEdgeFillEnabled, setIsAiEdgeFillEnabled] = useState(false);
   const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
@@ -475,9 +476,16 @@ export default function App() {
                 return;
             }
 
-            const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection && !f.needsSimpleMatch);
+            // Filter files based on their flags and current stability level
+            // At level 1 (Rough), perspective correction is disabled, so treat all files as standard
+            const standardFiles = uploadedFiles.filter(f => 
+                (!f.needsPerspectiveCorrection && !f.needsSimpleMatch) || 
+                (f.needsPerspectiveCorrection && !isPerspectiveCorrectionEnabled && !f.needsSimpleMatch)
+            );
             const simpleMatchFiles = uploadedFiles.filter(f => f.needsSimpleMatch && f.id !== masterFileId);
-            const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
+            const perspectiveFiles = isPerspectiveCorrectionEnabled 
+                ? uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId && !f.needsSimpleMatch)
+                : [];
             
             // Calculate total stages dynamically based on enabled features and file counts
             const hasStandardFiles = standardFiles.length > 0;

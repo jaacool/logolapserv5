@@ -131,6 +131,231 @@ const performSimpleAlignment = (
     }
 };
 
+// Robust alignment for partial logo matching
+// Handles cases where master has more logo elements than target
+const performRobustAlignment = (
+    baseMat: any,
+    targetMat: any,
+    isGreedy: boolean,
+    useRefinement: boolean,
+    usePerspectiveCorrection: boolean,
+) => {
+    const mats: any[] = [];
+    let akaze: any;
+    let clahe: any;
+    
+    const keypointsBase = new cv.KeyPointVector();
+    const keypointsTarget = new cv.KeyPointVector();
+    
+    try {
+        // More lenient thresholds for partial matching
+        const MIN_MATCH_COUNT = isGreedy ? 4 : 8; // Reduced from 10
+        const RATIO_TEST_THRESHOLD = isGreedy ? 0.85 : 0.8; // More lenient
+        const RANSAC_THRESHOLD = 5.0; // Increased tolerance for outliers
+    
+        const baseGray = new cv.Mat(); mats.push(baseGray);
+        const targetGray = new cv.Mat(); mats.push(targetGray);
+        cv.cvtColor(baseMat, baseGray, cv.COLOR_RGBA2GRAY);
+        cv.cvtColor(targetMat, targetGray, cv.COLOR_RGBA2GRAY);
+
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        clahe.apply(baseGray, baseGray);
+        clahe.apply(targetGray, targetGray);
+        
+        // Use AKAZE with more features for better partial matching
+        akaze = new cv.AKAZE(cv.AKAZE_DESCRIPTOR_MLDB, 0, 3, 0.0005); // Lower threshold = more features
+        const bf = new cv.BFMatcher(cv.NORM_HAMMING, false);
+
+        const descriptorsBase = new cv.Mat(); mats.push(descriptorsBase);
+        akaze.detectAndCompute(baseGray, new cv.Mat(), keypointsBase, descriptorsBase);
+
+        const descriptorsTarget = new cv.Mat(); mats.push(descriptorsTarget);
+        akaze.detectAndCompute(targetGray, new cv.Mat(), keypointsTarget, descriptorsTarget);
+
+        if (descriptorsBase.rows === 0 || descriptorsTarget.rows === 0) {
+            throw new Error("Could not find features in one or both images for alignment.");
+        }
+
+        console.log(`Features detected - Base: ${keypointsBase.size()}, Target: ${keypointsTarget.size()}`);
+
+        const matches = new cv.DMatchVectorVector(); mats.push(matches);
+        bf.knnMatch(descriptorsTarget, descriptorsBase, matches, 2);
+
+        let goodMatches = [];
+        for (let i = 0; i < matches.size(); ++i) {
+            const match = matches.get(i);
+            if (match.size() > 1) {
+                const m = match.get(0);
+                const n = match.get(1);
+                if (m.distance < RATIO_TEST_THRESHOLD * n.distance) {
+                    goodMatches.push(m);
+                }
+            }
+        }
+
+        console.log(`Good matches found: ${goodMatches.length}/${MIN_MATCH_COUNT} required`);
+
+        if (goodMatches.length < MIN_MATCH_COUNT) {
+            throw new Error(`Not enough good matches found for alignment - ${goodMatches.length}/${MIN_MATCH_COUNT}.`);
+        }
+
+        // Sort matches by distance and keep only the best ones for more robust estimation
+        goodMatches.sort((a, b) => a.distance - b.distance);
+        const topMatchCount = Math.min(goodMatches.length, Math.max(MIN_MATCH_COUNT * 2, 30));
+        goodMatches = goodMatches.slice(0, topMatchCount);
+
+        let basePts = [];
+        let targetPts = [];
+        for (let i = 0; i < goodMatches.length; i++) {
+            basePts.push(keypointsBase.get(goodMatches[i].trainIdx).pt.x);
+            basePts.push(keypointsBase.get(goodMatches[i].trainIdx).pt.y);
+            targetPts.push(keypointsTarget.get(goodMatches[i].queryIdx).pt.x);
+            targetPts.push(keypointsTarget.get(goodMatches[i].queryIdx).pt.y);
+        }
+        const matBasePts = cv.matFromArray(basePts.length / 2, 1, cv.CV_32FC2, basePts); mats.push(matBasePts);
+        const matTargetPts = cv.matFromArray(targetPts.length / 2, 1, cv.CV_32FC2, targetPts); mats.push(matTargetPts);
+
+        let transformMatrix: any;
+        if (usePerspectiveCorrection) {
+            // Robust perspective estimation with adaptive RANSAC
+            const mask = new cv.Mat(); mats.push(mask);
+            transformMatrix = cv.findHomography(matTargetPts, matBasePts, cv.RANSAC, RANSAC_THRESHOLD, mask);
+            
+            if (transformMatrix.empty()) {
+                console.warn("Homography failed, falling back to affine transform.");
+                transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
+            } else {
+                // Count inliers
+                let inlierCount = 0;
+                for (let i = 0; i < mask.rows; i++) {
+                    if (mask.ucharAt(i, 0) > 0) inlierCount++;
+                }
+                const inlierRatio = inlierCount / goodMatches.length;
+                console.log(`Homography inliers: ${inlierCount}/${goodMatches.length} (${(inlierRatio * 100).toFixed(1)}%)`);
+                
+                // If too few inliers, fallback to affine
+                if (inlierRatio < 0.3) {
+                    console.warn("Low inlier ratio, falling back to affine transform.");
+                    transformMatrix.delete();
+                    transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
+                }
+            }
+        } else {
+            // Affine transform with robust RANSAC
+            const mask = new cv.Mat(); mats.push(mask);
+            transformMatrix = cv.estimateAffine2D(matTargetPts, matBasePts, mask, cv.RANSAC, RANSAC_THRESHOLD);
+            
+            if (!transformMatrix.empty()) {
+                let inlierCount = 0;
+                for (let i = 0; i < mask.rows; i++) {
+                    if (mask.ucharAt(i, 0) > 0) inlierCount++;
+                }
+                console.log(`Affine inliers: ${inlierCount}/${goodMatches.length}`);
+            }
+        }
+        
+        if (transformMatrix.empty()) {
+            throw new Error("Could not compute the transformation.");
+        }
+
+        // Apply refinement if enabled
+        if (useRefinement && !transformMatrix.empty()) {
+            const isHomography = transformMatrix.rows === 3;
+            const warpedForRefine = new cv.Mat(); mats.push(warpedForRefine);
+            const dsize = new cv.Size(baseMat.cols, baseMat.rows);
+            
+            if (isHomography) {
+                cv.warpPerspective(targetMat, warpedForRefine, transformMatrix, dsize);
+            } else {
+                cv.warpAffine(targetMat, warpedForRefine, transformMatrix, dsize);
+            }
+
+            const warpedGray = new cv.Mat(); mats.push(warpedGray);
+            cv.cvtColor(warpedForRefine, warpedGray, cv.COLOR_RGBA2GRAY);
+            clahe.apply(warpedGray, warpedGray);
+
+            const keypointsRefined = new cv.KeyPointVector();
+            const descriptorsRefined = new cv.Mat(); mats.push(descriptorsRefined);
+            akaze.detectAndCompute(warpedGray, new cv.Mat(), keypointsRefined, descriptorsRefined);
+
+            if (descriptorsRefined.rows > 0) {
+                const matchesRefined = new cv.DMatchVectorVector(); mats.push(matchesRefined);
+                bf.knnMatch(descriptorsRefined, descriptorsBase, matchesRefined, 2);
+
+                const goodMatchesRefined = [];
+                for (let i = 0; i < matchesRefined.size(); ++i) {
+                    const match = matchesRefined.get(i);
+                    if (match.size() > 1) {
+                        const m = match.get(0);
+                        const n = match.get(1);
+                        if (m.distance < RATIO_TEST_THRESHOLD * n.distance) {
+                            goodMatchesRefined.push(m);
+                        }
+                    }
+                }
+
+                if (goodMatchesRefined.length >= MIN_MATCH_COUNT) {
+                    const basePtsRefined = [], targetPtsRefined = [];
+                    for (let i = 0; i < goodMatchesRefined.length; i++) {
+                        basePtsRefined.push(keypointsBase.get(goodMatchesRefined[i].trainIdx).pt.x);
+                        basePtsRefined.push(keypointsBase.get(goodMatchesRefined[i].trainIdx).pt.y);
+                        targetPtsRefined.push(keypointsRefined.get(goodMatchesRefined[i].queryIdx).pt.x);
+                        targetPtsRefined.push(keypointsRefined.get(goodMatchesRefined[i].queryIdx).pt.y);
+                    }
+
+                    const matBasePtsRefined = cv.matFromArray(basePtsRefined.length / 2, 1, cv.CV_32FC2, basePtsRefined); mats.push(matBasePtsRefined);
+                    const matTargetPtsRefined = cv.matFromArray(targetPtsRefined.length / 2, 1, cv.CV_32FC2, targetPtsRefined); mats.push(matTargetPtsRefined);
+
+                    const refinementTransform = isHomography
+                        ? cv.findHomography(matTargetPtsRefined, matBasePtsRefined, cv.RANSAC, RANSAC_THRESHOLD)
+                        : cv.estimateAffine2D(matTargetPtsRefined, matBasePtsRefined, new cv.Mat(), cv.RANSAC, RANSAC_THRESHOLD);
+
+                    if (!refinementTransform.empty()) {
+                        // Combine transforms
+                        if (isHomography) {
+                            const combinedH = new cv.Mat();
+                            cv.gemm(refinementTransform, transformMatrix, 1, new cv.Mat(), 0, combinedH, 0);
+                            transformMatrix.delete();
+                            transformMatrix = combinedH;
+                        } else {
+                            const h1 = new cv.Mat(3, 3, cv.CV_64FC1); mats.push(h1);
+                            const h2 = new cv.Mat(3, 3, cv.CV_64FC1); mats.push(h2);
+                            
+                            for(let i=0; i<2; i++) for(let j=0; j<3; j++) h1.doublePtr(i,j)[0] = refinementTransform.doubleAt(i, j);
+                            h1.doublePtr(2,0)[0] = 0; h1.doublePtr(2,1)[0] = 0; h1.doublePtr(2,2)[0] = 1;
+                            
+                            for(let i=0; i<2; i++) for(let j=0; j<3; j++) h2.doublePtr(i,j)[0] = transformMatrix.doubleAt(i, j);
+                            h2.doublePtr(2,0)[0] = 0; h2.doublePtr(2,1)[0] = 0; h2.doublePtr(2,2)[0] = 1;
+
+                            const combinedH = new cv.Mat(); mats.push(combinedH);
+                            cv.gemm(h1, h2, 1, new cv.Mat(), 0, combinedH, 0);
+
+                            const finalAffine = new cv.Mat(2, 3, cv.CV_64FC1);
+                            for(let i=0; i<2; i++) for(let j=0; j<3; j++) finalAffine.doublePtr(i,j)[0] = combinedH.doubleAt(i, j);
+                            
+                            transformMatrix.delete();
+                            transformMatrix = finalAffine;
+                        }
+                        refinementTransform.delete();
+                    }
+                }
+            }
+            if (keypointsRefined) keypointsRefined.delete();
+        }
+
+        return { transformMatrix, keypointsBase, keypointsTarget, goodMatches };
+
+    } catch (e) {
+        if (keypointsBase && !keypointsBase.isDeleted()) keypointsBase.delete();
+        if (keypointsTarget && !keypointsTarget.isDeleted()) keypointsTarget.delete();
+        throw e;
+    } finally {
+         mats.forEach(mat => { if (mat && mat.delete && !mat.isDeleted()) mat.delete(); });
+         if (akaze && akaze.delete) akaze.delete();
+         if (clahe && clahe.delete) clahe.delete();
+    }
+};
+
 const performAlignment = (
     baseMat: any,
     targetMat: any,
@@ -411,9 +636,10 @@ export const processImageLocally = (
                 debugUrl = dummyCanvas.toDataURL();
             } else {
                 // Choose algorithm based on simple match setting
+                // Use robust alignment for better partial logo matching
                 const alignResult = isSimpleMatchEnabled
                     ? performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled)
-                    : performAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, isPerspectiveCorrectionEnabled);
+                    : performRobustAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, isPerspectiveCorrectionEnabled);
                  
                  transformMatrix = alignResult.transformMatrix;
                  mats.push(transformMatrix);
@@ -541,8 +767,8 @@ export const refineWithGoldenTemplate = async (
             throw new Error("Could not load images for refinement.");
         }
 
-        // Refinement uses affine transform
-        const alignResult = performAlignment(templateMat, targetMat, false, true, false);
+        // Refinement uses affine transform with robust matching
+        const alignResult = performRobustAlignment(templateMat, targetMat, false, true, false);
         const affineTransform = alignResult.transformMatrix; mats.push(affineTransform);
 
         const warpedMat = new cv.Mat(); mats.push(warpedMat);
