@@ -101,23 +101,28 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
         // 3. Aspect Ratio Check - screenshots often have standard aspect ratios
         const aspectRatio = mat.cols / mat.rows;
         const isStandardAspectRatio = 
-            Math.abs(aspectRatio - 16/9) < 0.05 ||   // 16:9
-            Math.abs(aspectRatio - 4/3) < 0.05 ||    // 4:3
-            Math.abs(aspectRatio - 1) < 0.05 ||      // 1:1
-            Math.abs(aspectRatio - 9/16) < 0.05;     // 9:16 (portrait)
+            Math.abs(aspectRatio - 16/9) < 0.1 ||    // 16:9 (relaxed tolerance)
+            Math.abs(aspectRatio - 4/3) < 0.1 ||     // 4:3
+            Math.abs(aspectRatio - 1) < 0.1 ||       // 1:1
+            Math.abs(aspectRatio - 9/16) < 0.1 ||    // 9:16 (portrait)
+            Math.abs(aspectRatio - 3/2) < 0.1 ||     // 3:2 (common photo)
+            Math.abs(aspectRatio - 2/3) < 0.1;       // 2:3 (portrait photo)
 
-        // Decision Logic
+        // Decision Logic - RELAXED thresholds to catch more frontal images
         // Frontal/Screenshot indicators:
-        // - High ratio of horizontal/vertical lines (> 0.7)
-        // - Low feature distribution variance (< 0.4)
+        // - Moderate to high ratio of horizontal/vertical lines (> 0.55)
+        // - Moderate to low feature distribution variance (< 0.55)
         // - Standard aspect ratio
         
         const isFrontal = 
-            (hvRatio > 0.7 && coefficientOfVariation < 0.4) ||  // Strong frontal indicators
-            (hvRatio > 0.75 && isStandardAspectRatio) ||        // Very aligned + standard ratio
-            (coefficientOfVariation < 0.3 && isStandardAspectRatio); // Very uniform + standard ratio
+            hvRatio > 0.55 ||                                        // Mostly aligned lines (relaxed from 0.7)
+            coefficientOfVariation < 0.35 ||                         // Uniform distribution (relaxed from 0.3)
+            (hvRatio > 0.45 && coefficientOfVariation < 0.55) ||    // Combined moderate indicators
+            (hvRatio > 0.50 && isStandardAspectRatio) ||            // Somewhat aligned + standard ratio
+            (coefficientOfVariation < 0.50 && isStandardAspectRatio) || // Somewhat uniform + standard ratio
+            (totalLines > 100 && hvRatio > 0.40);                   // Many lines that are somewhat aligned
 
-        console.log(`Perspective Detection: hvRatio=${hvRatio.toFixed(2)}, cv=${coefficientOfVariation.toFixed(2)}, standardAR=${isStandardAspectRatio}, lines=${totalLines} -> ${isFrontal ? 'FRONTAL' : 'PERSPECTIVE'}`);
+        console.log(`Perspective Detection: hvRatio=${hvRatio.toFixed(2)}, cv=${coefficientOfVariation.toFixed(2)}, standardAR=${isStandardAspectRatio}, lines=${totalLines}, AR=${aspectRatio.toFixed(2)} -> ${isFrontal ? 'FRONTAL' : 'PERSPECTIVE'}`);
 
         // Return true if perspective correction is needed (NOT frontal)
         return !isFrontal;
