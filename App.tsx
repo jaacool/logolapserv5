@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -38,7 +38,6 @@ const DEFAULT_PROMPT_SNIPPETS: string[] = [
     'a trade show display'
 ];
 
-
 const getFriendlyErrorMessage = (err: any, context: string) => {
     const rawMessage = err.message || 'An unknown error occurred.';
     if (rawMessage.includes('Not enough good matches')) {
@@ -49,6 +48,9 @@ const getFriendlyErrorMessage = (err: any, context: string) => {
     }
     if (rawMessage.includes('API key not valid') || rawMessage.includes('API_KEY_INVALID')) {
         return 'Your API key is not valid. Please enter a valid key and try again.';
+    }
+    if (rawMessage.includes('OpenCV internal error code')) {
+        return `A low-level image alignment error occurred for "${context}". The perspective transform became unstable or invalid for this image. Try a cleaner scan, less extreme perspective, or disabling perspective correction for this file.`;
     }
     return `An error occurred with "${context}": ${rawMessage}`;
 };
@@ -66,11 +68,12 @@ export default function App() {
   const [elapsedTime, setElapsedTime] = useState(0); // Track actual elapsed time in seconds
   const [cvReady, setCvReady] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
-  const [stabilityLevel, setStabilityLevel] = useState<number>(3); // 1=P, 2=P+I, 3=P+I+E
+  const [stabilityLevel, setStabilityLevel] = useState<number>(3); // 1=I, 2=P+I, 3=P+I+E
   // Greedy mode is always disabled but kept for future use
   const isGreedyMode = false;
   // Derived states from stabilityLevel
-  const isRefinementEnabled = stabilityLevel >= 2;
+  const isRefinementEnabled = stabilityLevel >= 1; // Refinement active from level 1
+  const isPerspectiveCorrectionEnabled = stabilityLevel >= 2; // Perspective from level 2
   const isEnsembleCorrectionEnabled = stabilityLevel >= 3;
   const [isAiEdgeFillEnabled, setIsAiEdgeFillEnabled] = useState(false);
   const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
@@ -176,18 +179,35 @@ export default function App() {
         .filter(file => ['image/png', 'image/jpeg'].includes(file.type))
         .map(async (file) => {
           const imageElement = await fileToImageElement(file);
+          
+          // Automatic perspective detection
+          let needsPerspective = true;
+          let needsSimple = false;
+          
+          if (cvReady) {
+            try {
+              needsPerspective = detectPerspectiveDistortion(imageElement);
+              needsSimple = !needsPerspective; // If no perspective needed, use simple match
+              console.log(`Auto-detected ${file.name}: ${needsPerspective ? 'PERSPECTIVE' : 'FRONTAL/SIMPLE'}`);
+            } catch (err) {
+              console.warn('Auto-detection failed, defaulting to perspective:', err);
+              needsPerspective = true;
+              needsSimple = false;
+            }
+          }
+          
           return {
             id: `${file.name}-${file.lastModified}`,
             file,
             previewUrl: imageElement.src,
             imageElement: imageElement,
-            needsPerspectiveCorrection: true,
-            needsSimpleMatch: false,
+            needsPerspectiveCorrection: needsPerspective,
+            needsSimpleMatch: needsSimple,
           };
         })
     );
     setUploadedFiles(prev => [...prev, ...newFiles]);
-  }, []);
+  }, [cvReady]);
 
   const handleToggleSimpleMatch = useCallback((fileId: string) => {
     setUploadedFiles(prevFiles => 
@@ -202,7 +222,6 @@ export default function App() {
       )
     );
   }, []);
-
 
   const handleBackToSelection = useCallback(() => {
     setProcessedFiles([]);
@@ -475,9 +494,16 @@ export default function App() {
                 return;
             }
 
-            const standardFiles = uploadedFiles.filter(f => !f.needsPerspectiveCorrection && !f.needsSimpleMatch);
+            // Filter files based on their flags and current stability level
+            // At level 1 (Rough), perspective correction is disabled, so treat all files as standard
+            const standardFiles = uploadedFiles.filter(f => 
+                (!f.needsPerspectiveCorrection && !f.needsSimpleMatch) || 
+                (f.needsPerspectiveCorrection && !isPerspectiveCorrectionEnabled && !f.needsSimpleMatch)
+            );
             const simpleMatchFiles = uploadedFiles.filter(f => f.needsSimpleMatch && f.id !== masterFileId);
-            const perspectiveFiles = uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId);
+            const perspectiveFiles = isPerspectiveCorrectionEnabled 
+                ? uploadedFiles.filter(f => f.needsPerspectiveCorrection && f.id !== masterFileId && !f.needsSimpleMatch)
+                : [];
             
             // Calculate total stages dynamically based on enabled features and file counts
             const hasStandardFiles = standardFiles.length > 0;
