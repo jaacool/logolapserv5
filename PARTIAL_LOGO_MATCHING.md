@@ -26,9 +26,9 @@ Wenn ein Master-Logo mehr Elemente enthält als ein Target-Bild (z.B. Master: "L
 
 3. **Center-Weighted Matching** (NEU!)
    ```typescript
-   // Bei vielen Matches (>24): Bevorzuge Matches nahe der Bildmitte
+   // Bei >= 12 Matches: Bevorzuge Matches nahe der Bildmitte (frühere Aktivierung!)
    // Hilft bei Logo-Wänden oder mehreren Logo-Varianten im Bild
-   if (goodMatches.length > MIN_MATCH_COUNT * 3) {
+   if (goodMatches.length >= MIN_MATCH_COUNT * 1.5) {  // >= 12 Matches
        const imageCenterX = targetMat.cols / 2;
        const imageCenterY = targetMat.rows / 2;
        
@@ -39,14 +39,24 @@ Wenn ein Master-Logo mehr Elemente enthält als ein Target-Bild (z.B. Master: "L
                Math.pow(pt.x - imageCenterX, 2) + 
                Math.pow(pt.y - imageCenterY, 2)
            );
-           return { match, distanceToCenter };
+           return { match, distanceToCenter, pt };
        });
        
-       // Wähle die 60% zentralsten Matches
+       // Wähle die 40% zentralsten Matches (stärkere Zentrierung!)
        matchesWithCenterDistance.sort((a, b) => a.distanceToCenter - b.distanceToCenter);
+       const centralMatchCount = Math.max(
+           MIN_MATCH_COUNT,
+           Math.floor(matchesWithCenterDistance.length * 0.4)
+       );
        const centralMatches = matchesWithCenterDistance
-           .slice(0, Math.floor(matchesWithCenterDistance.length * 0.6))
+           .slice(0, centralMatchCount)
            .map(item => item.match);
+       
+       // Berechne Cluster-Zentrum zur Verifikation
+       const avgX = matchesWithCenterDistance.slice(0, centralMatchCount)
+           .reduce((sum, item) => sum + item.pt.x, 0) / centralMatchCount;
+       const avgY = matchesWithCenterDistance.slice(0, centralMatchCount)
+           .reduce((sum, item) => sum + item.pt.y, 0) / centralMatchCount;
        
        // Sortiere diese nach Qualität
        centralMatches.sort((a, b) => a.distance - b.distance);
@@ -106,9 +116,10 @@ const alignResult = performRobustAlignment(templateMat, targetMat, false, true, 
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 3. Center-Weighted Selection (wenn > 24 Matches)       │
-│    → Bevorzuge Matches nahe Bildmitte (60% zentral)    │
+│ 3. Center-Weighted Selection (wenn >= 12 Matches)      │
+│    → Bevorzuge Matches nahe Bildmitte (40% zentral)    │
 │    → Hilft bei Logo-Wänden & mehreren Varianten        │
+│    → Berechnet Cluster-Zentrum zur Verifikation        │
 └─────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────┐
@@ -166,5 +177,6 @@ Der robuste Algorithmus wird bei allen Levels verwendet, passt sich aber an:
 Überprüfe Console für:
 - Feature counts (sollten höher sein als vorher)
 - Good matches (sollte >= 8 sein)
-- "Center-weighted matching" Meldung bei Logo-Wänden (>24 Matches)
+- "Center-weighted matching" Meldung bei Logo-Wänden (>=12 Matches)
+- Cluster center distance (sollte klein sein, nahe Bildmitte)
 - Inlier ratios (sollte >= 30% sein für Homography)
