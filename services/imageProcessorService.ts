@@ -346,7 +346,7 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         targetHistFlipped.delete();
         mask.delete();
 
-        // STEP 4: Decision logic (LOGO-FOCUSED with relaxed thresholds)
+        // STEP 4: Decision logic (LOGO-FOCUSED with stricter thresholds)
         // 1. Mean luminance difference (logo regions only)
         const meanDifference = Math.abs(masterMean - targetMean);
         
@@ -354,28 +354,28 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         const correlationImprovement = invertedCorrelation - normalCorrelation;
         
         // 3. Contrast check (logo regions)
-        const hasSufficientContrast = masterStd > 10 && targetStd > 10; // Very relaxed
+        const hasSufficientContrast = masterStd > 15 && targetStd > 15; // Stricter contrast requirement
         
-        // Multi-criteria decision with weighted scoring:
+        // Multi-criteria decision with weighted scoring (STRICTER):
         let inversionScore = 0;
         
-        // Criterion 1: Mean difference (strong indicator)
-        if (meanDifference > 60) inversionScore += 2; // Strong difference
-        else if (meanDifference > 40) inversionScore += 1; // Moderate difference
+        // Criterion 1: Mean difference (strong indicator) - STRICTER
+        if (meanDifference > 80) inversionScore += 2; // Strong difference (raised from 60)
+        else if (meanDifference > 60) inversionScore += 1; // Moderate difference (raised from 40)
         
-        // Criterion 2: Histogram correlation improvement (strongest indicator)
-        if (correlationImprovement > 0.15) inversionScore += 3; // Strong improvement
-        else if (correlationImprovement > 0.08) inversionScore += 2; // Moderate improvement
-        else if (correlationImprovement > 0.03) inversionScore += 1; // Slight improvement
+        // Criterion 2: Histogram correlation improvement (strongest indicator) - STRICTER
+        if (correlationImprovement > 0.25) inversionScore += 3; // Strong improvement (raised from 0.15)
+        else if (correlationImprovement > 0.15) inversionScore += 2; // Moderate improvement (raised from 0.08)
+        else if (correlationImprovement > 0.08) inversionScore += 1; // Slight improvement (raised from 0.03)
         
-        // Criterion 3: Inverted correlation is actually good (not just better)
-        if (invertedCorrelation > 0.5) inversionScore += 1;
+        // Criterion 3: Inverted correlation is actually good (not just better) - STRICTER
+        if (invertedCorrelation > 0.6) inversionScore += 1; // Raised from 0.5
         
-        // Criterion 4: Normal correlation is poor (suggests mismatch)
-        if (normalCorrelation < 0.3) inversionScore += 1;
+        // Criterion 4: Normal correlation is poor (suggests mismatch) - STRICTER
+        if (normalCorrelation < 0.2) inversionScore += 1; // Lowered from 0.3
         
-        // Decision: Need at least score of 3 and sufficient contrast
-        const isInverted = inversionScore >= 3 && hasSufficientContrast;
+        // Decision: Need at least score of 4 (raised from 3) and sufficient contrast
+        const isInverted = inversionScore >= 4 && hasSufficientContrast;
 
         console.log(`Luminance Inversion Detection [LOGO-FOCUSED]: masterMean=${masterMean.toFixed(1)}, targetMean=${targetMean.toFixed(1)}, meanDiff=${meanDifference.toFixed(1)}, normalCorr=${normalCorrelation.toFixed(3)}, invertedCorr=${invertedCorrelation.toFixed(3)}, improvement=${correlationImprovement.toFixed(3)}, score=${inversionScore}/7, masterStd=${masterStd.toFixed(1)}, targetStd=${targetStd.toFixed(1)} -> ${isInverted ? '🔄 INVERTED' : '✓ NORMAL'}`);
 
