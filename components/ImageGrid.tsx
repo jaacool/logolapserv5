@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UploadedFile } from '../types';
-import { SimpleMatchIcon, XIcon } from './Icons';
+import { SimpleMatchIcon, XIcon, InvertIcon } from './Icons';
 
 interface ImageGridProps {
   files: UploadedFile[];
@@ -33,11 +33,16 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
           If the picture is taken frontal (without perspective shift) please click on the 
           <span className="inline-flex items-center justify-center w-6 h-6 bg-black/50 rounded-full border border-gray-600"><SimpleMatchIcon className="w-4 h-4 text-gray-300"/></span>
         </p>
+        <p className="text-sm text-gray-400 flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-500/90 rounded-full"><InvertIcon className="w-4 h-4 text-white"/></span>
+          = Inverted luminance detected (will be auto-corrected)
+        </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
         {files.map((file) => {
           const isMaster = file.id === masterFileId;
           const needsSimpleMatch = file.needsSimpleMatch;
+          const isInverted = file.isLuminanceInverted;
 
           return (
             <div
@@ -56,6 +61,15 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
               >
                   <XIcon className="w-4 h-4" />
               </button>
+
+              {isInverted && !isMaster && (
+                <div
+                  className="absolute top-1 left-1 p-1.5 rounded-full bg-purple-500/90 text-white"
+                  title="Luminance Inverted (will be processed as negative)"
+                >
+                  <InvertIcon className="w-4 h-4" />
+                </div>
+              )}
 
               <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <p className="text-white text-xs text-center p-1 truncate">{file.file.name}</p>

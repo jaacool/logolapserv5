@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -141,36 +141,72 @@ export default function App() {
       setSelectedSnippets(updatedSelection);
   };
 
-  const handleSelectMaster = useCallback((newMasterId: string) => {
+  const toggleMaster = useCallback(async (newMasterId: string | null) => {
     const newPreviousStates = new Map(previousFileStates);
     
-    setUploadedFiles(prevFiles => {
-      return prevFiles.map(file => {
-        if (file.id === newMasterId) {
-          // Neuen Master: Zustand speichern und deaktivieren
-          newPreviousStates.set(file.id, {
-            needsPerspectiveCorrection: file.needsPerspectiveCorrection || false,
-            needsSimpleMatch: file.needsSimpleMatch || false
-          });
-          return { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false };
-        }
+    // Run luminance inversion detection when a new master is selected
+    if (newMasterId && cvReady) {
+      const masterFile = uploadedFiles.find(f => f.id === newMasterId);
+      if (masterFile) {
+        console.log('Running luminance inversion detection after master selection...');
         
-        if (file.id === masterFileId) {
-          // Alter Master: Vorherigen Zustand wiederherstellen
-          const previousState = newPreviousStates.get(file.id);
-          if (previousState && typeof previousState === 'object') {
-            return { ...file, ...previousState };
+        // Detect inversion for all non-master files
+        const updatedFiles = await Promise.all(
+          uploadedFiles.map(async (file) => {
+            if (file.id === newMasterId) {
+              // Master: save state and disable corrections
+              newPreviousStates.set(file.id, {
+                needsPerspectiveCorrection: file.needsPerspectiveCorrection || false,
+                needsSimpleMatch: file.needsSimpleMatch || false
+              });
+              return { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false, isLuminanceInverted: false };
+            }
+            
+            if (file.id === masterFileId) {
+              // Old master: restore previous state
+              const previousState = newPreviousStates.get(file.id);
+              if (previousState && typeof previousState === 'object') {
+                return { ...file, ...previousState };
+              }
+            }
+            
+            // Detect luminance inversion for other files
+            try {
+              const isInverted = detectLuminanceInversion(masterFile.imageElement, file.imageElement);
+              console.log(`Luminance inversion for ${file.file.name}: ${isInverted ? 'INVERTED' : 'NORMAL'}`);
+              return { ...file, isLuminanceInverted: isInverted };
+            } catch (err) {
+              console.warn(`Luminance inversion detection failed for ${file.file.name}:`, err);
+              return file;
+            }
+          })
+        );
+        
+        setUploadedFiles(updatedFiles);
+      }
+    } else {
+      // No new master selected, just update states
+      setUploadedFiles(prevFiles => {
+        return prevFiles.map(file => {
+          if (file.id === masterFileId) {
+            // Old master: restore previous state
+            const previousState = newPreviousStates.get(file.id);
+            if (previousState && typeof previousState === 'object') {
+              return { ...file, ...previousState };
+            }
           }
-        }
-        
-        return file;
+          
+          return file;
+        });
       });
-    });
+    }
     
     setPreviousFileStates(newPreviousStates);
     setMasterFileId(newMasterId);
-  }, [masterFileId, previousFileStates]);
+  }, [masterFileId, previousFileStates, uploadedFiles, cvReady]);
 
+  // Alias for ImageGrid component
+  const handleSelectMaster = toggleMaster;
 
   const handleFilesDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
@@ -295,7 +331,8 @@ export default function App() {
                 false, // Simple match disabled for perspective correction
                 false, 
                 aspectRatio,
-                isAiEdgeFillEnabled
+                isAiEdgeFillEnabled,
+                targetFile.isLuminanceInverted || false
             );
 
             if (isAiEdgeFillEnabled && apiKey) {
@@ -339,7 +376,8 @@ export default function App() {
                 true, // Force simple match
                 false, 
                 aspectRatio,
-                isAiEdgeFillEnabled
+                isAiEdgeFillEnabled,
+                targetFile.isLuminanceInverted || false
             );
 
             
@@ -539,7 +577,8 @@ export default function App() {
                 try {
                     let { processedUrl, debugUrl } = await processImageLocally(
                         masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                        false, isSimpleMatchEnabled, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled
+                        false, isSimpleMatchEnabled, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled,
+                        targetFile.isLuminanceInverted || false
                     );
                     
                     stage1Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
@@ -565,7 +604,8 @@ export default function App() {
                     try {
                         let { processedUrl, debugUrl } = await processImageLocally(
                             masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                            false, true, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled
+                            false, true, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled,
+                            targetFile.isLuminanceInverted || false
                         );
 
                         simpleMatchResults.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
@@ -619,7 +659,8 @@ export default function App() {
                          try {
                             let { processedUrl, debugUrl } = await processImageLocally(
                                 perspectiveMasterElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
-                                true, false, false, aspectRatio, isAiEdgeFillEnabled
+                                true, false, false, aspectRatio, isAiEdgeFillEnabled,
+                                targetFile.isLuminanceInverted || false
                             );
 
                             stage3Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
@@ -706,7 +747,7 @@ export default function App() {
                             const masterElementForAI = await dataUrlToImageElement(masterResult.processedUrl);
                             const { processedUrl, debugUrl } = await processImageLocally(
                                 masterElementForAI, variationImageElement, true, true,
-                                false, false, false, aspectRatio, isAiEdgeFillEnabled
+                                false, false, false, aspectRatio, isAiEdgeFillEnabled, false
                             );
                             const variationId = `ai-var-${Date.now()}-${i}`;
                             finalResults.push({ id: variationId, originalName: `AI: ${randomSnippet}`, processedUrl, debugUrl: variationDataUrl });

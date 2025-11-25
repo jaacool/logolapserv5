@@ -7,6 +7,7 @@ export interface UploadedFile {
   imageElement: HTMLImageElement;
   needsPerspectiveCorrection?: boolean;
   needsSimpleMatch?: boolean;
+  isLuminanceInverted?: boolean;
 }
 
 export interface ProcessedFile {

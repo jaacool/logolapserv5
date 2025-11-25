@@ -169,6 +169,140 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
     }
 };
 
+// Luminance Inversion Detection - compares average luminance between master and target
+// Returns true if target appears to be inverted compared to master (e.g., white logo on black vs black logo on white)
+export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetImage: HTMLImageElement): boolean => {
+    let masterMat: any;
+    let targetMat: any;
+    let masterGray: any;
+    let targetGray: any;
+
+    try {
+        // Load images
+        masterMat = loadImageToMat(masterImage);
+        targetMat = loadImageToMat(targetImage);
+
+        // Convert to grayscale
+        masterGray = new cv.Mat();
+        targetGray = new cv.Mat();
+        cv.cvtColor(masterMat, masterGray, cv.COLOR_RGBA2GRAY);
+        cv.cvtColor(targetMat, targetGray, cv.COLOR_RGBA2GRAY);
+
+        // Calculate mean luminance for both images
+        const masterMean = cv.mean(masterGray)[0];
+        const targetMean = cv.mean(targetGray)[0];
+
+        // Calculate standard deviation to understand contrast
+        const masterStdDev = new cv.Mat();
+        const targetStdDev = new cv.Mat();
+        const masterMeanMat = new cv.Mat();
+        const targetMeanMat = new cv.Mat();
+        
+        cv.meanStdDev(masterGray, masterMeanMat, masterStdDev);
+        cv.meanStdDev(targetGray, targetMeanMat, targetStdDev);
+        
+        const masterStd = masterStdDev.data64F[0];
+        const targetStd = targetStdDev.data64F[0];
+
+        // Cleanup stddev mats
+        masterStdDev.delete();
+        targetStdDev.delete();
+        masterMeanMat.delete();
+        targetMeanMat.delete();
+
+        // Calculate histogram correlation for inverted comparison
+        const masterHist = new cv.Mat();
+        const targetHist = new cv.Mat();
+        const mask = new cv.Mat();
+        
+        cv.calcHist([masterGray], [0], mask, masterHist, [256], [0, 256]);
+        cv.calcHist([targetGray], [0], mask, targetHist, [256], [0, 256]);
+        
+        // Normalize histograms
+        cv.normalize(masterHist, masterHist, 0, 1, cv.NORM_MINMAX);
+        cv.normalize(targetHist, targetHist, 0, 1, cv.NORM_MINMAX);
+        
+        // Compare normal correlation
+        const normalCorrelation = cv.compareHist(masterHist, targetHist, cv.HISTCMP_CORREL);
+        
+        // Flip target histogram for inverted comparison
+        const targetHistFlipped = new cv.Mat();
+        cv.flip(targetHist, targetHistFlipped, 0);
+        const invertedCorrelation = cv.compareHist(masterHist, targetHistFlipped, cv.HISTCMP_CORREL);
+        
+        // Cleanup histogram mats
+        masterHist.delete();
+        targetHist.delete();
+        targetHistFlipped.delete();
+        mask.delete();
+
+        // Decision logic:
+        // 1. If mean luminances are on opposite sides of the spectrum (one dark, one bright)
+        const meanDifference = Math.abs(masterMean - targetMean);
+        const isOppositeLuminance = meanDifference > 100; // Significant difference (0-255 scale)
+        
+        // 2. If inverted histogram correlation is significantly better than normal
+        const correlationImprovement = invertedCorrelation - normalCorrelation;
+        const hasStrongInvertedCorrelation = correlationImprovement > 0.2;
+        
+        // 3. Both images should have reasonable contrast (not just solid colors)
+        const hasSufficientContrast = masterStd > 20 && targetStd > 20;
+
+        const isInverted = isOppositeLuminance && hasStrongInvertedCorrelation && hasSufficientContrast;
+
+        console.log(`Luminance Inversion Detection: masterMean=${masterMean.toFixed(1)}, targetMean=${targetMean.toFixed(1)}, meanDiff=${meanDifference.toFixed(1)}, normalCorr=${normalCorrelation.toFixed(3)}, invertedCorr=${invertedCorrelation.toFixed(3)}, improvement=${correlationImprovement.toFixed(3)}, masterStd=${masterStd.toFixed(1)}, targetStd=${targetStd.toFixed(1)} -> ${isInverted ? 'INVERTED' : 'NORMAL'}`);
+
+        return isInverted;
+
+    } catch (error) {
+        console.error('Luminance inversion detection failed:', error);
+        return false; // Default: assume not inverted
+    } finally {
+        // Cleanup
+        if (masterMat && !masterMat.isDeleted()) masterMat.delete();
+        if (targetMat && !targetMat.isDeleted()) targetMat.delete();
+        if (masterGray && !masterGray.isDeleted()) masterGray.delete();
+        if (targetGray && !targetGray.isDeleted()) targetGray.delete();
+    }
+};
+
+// Invert image luminance - creates a true inverted image (not just a filter)
+// Returns a new HTMLImageElement with inverted colors
+export const invertImageLuminance = async (image: HTMLImageElement): Promise<HTMLImageElement> => {
+    let mat: any;
+    let inverted: any;
+
+    try {
+        // Load image to mat
+        mat = loadImageToMat(image);
+        
+        // Create inverted mat
+        inverted = new cv.Mat();
+        
+        // Invert: 255 - pixel value for each channel
+        cv.bitwise_not(mat, inverted);
+        
+        // Convert to canvas and then to image
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        cv.imshow(canvas, inverted);
+        
+        // Convert canvas to blob and then to data URL
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        
+        // Create new image element from data URL
+        const invertedImage = await dataUrlToImageElement(dataUrl);
+        
+        return invertedImage;
+
+    } finally {
+        // Cleanup
+        if (mat && !mat.isDeleted()) mat.delete();
+        if (inverted && !inverted.isDeleted()) inverted.delete();
+    }
+};
+
 // Simple Match Algorithm - only rotation, position and uniform scaling (no perspective distortion)
 const performSimpleAlignment = (
     baseMat: any,
@@ -846,7 +980,8 @@ export const processImageLocally = (
     isSimpleMatchEnabled: boolean,
     isMaster: boolean,
     aspectRatio: string,
-    useBlackBorder: boolean = false
+    useBlackBorder: boolean = false,
+    isLuminanceInverted: boolean = false
 ): Promise<ProcessResult> => {
     return new Promise((resolve, reject) => {
         const mats: any[] = [];
@@ -857,8 +992,19 @@ export const processImageLocally = (
                 throw new Error("OpenCV.js is not loaded yet.");
             }
 
+            // Load master image
             const masterMat = loadImageToMat(masterImage); mats.push(masterMat);
-            const targetMat = loadImageToMat(targetImage); mats.push(targetMat);
+            
+            // Load target image and invert if necessary
+            let targetMat = loadImageToMat(targetImage); mats.push(targetMat);
+            
+            // If luminance inverted, invert the target for matching
+            if (isLuminanceInverted && !isMaster) {
+                console.log('Inverting target image for matching (luminance inverted detected)');
+                const invertedTargetMat = new cv.Mat(); mats.push(invertedTargetMat);
+                cv.bitwise_not(targetMat, invertedTargetMat);
+                targetMat = invertedTargetMat; // Use inverted version for matching
+            }
 
             if (masterMat.empty() || targetMat.empty()) {
                 throw new Error("Could not load images into OpenCV format.");
@@ -1080,10 +1226,19 @@ export const processImageLocally = (
                 blurredMat.copyTo(paddedMat, invertedMask);
             }
             
+            // If luminance inverted, invert back to original before output
+            let finalOutputMat = paddedMat;
+            if (isLuminanceInverted && !isMaster) {
+                console.log('Inverting output back to original luminance');
+                const revertedMat = new cv.Mat(); mats.push(revertedMat);
+                cv.bitwise_not(paddedMat, revertedMat);
+                finalOutputMat = revertedMat;
+            }
+            
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = finalWidth;
             finalCanvas.height = finalHeight;
-            cv.imshow(finalCanvas, paddedMat);
+            cv.imshow(finalCanvas, finalOutputMat);
             const processedUrl = finalCanvas.toDataURL('image/png');
             
             resolve({ processedUrl, debugUrl });
