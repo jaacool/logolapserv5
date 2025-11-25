@@ -170,12 +170,15 @@ export const detectPerspectiveDistortion = (image: HTMLImageElement): boolean =>
 };
 
 // Luminance Inversion Detection - compares average luminance between master and target
+// LOGO-FOCUSED: Uses feature detection to find logo region and compares only that area
 // Returns true if target appears to be inverted compared to master (e.g., white logo on black vs black logo on white)
 export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetImage: HTMLImageElement): boolean => {
     let masterMat: any;
     let targetMat: any;
     let masterGray: any;
     let targetGray: any;
+    let masterLogoRegion: any;
+    let targetLogoRegion: any;
 
     try {
         // Load images
@@ -188,18 +191,115 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         cv.cvtColor(masterMat, masterGray, cv.COLOR_RGBA2GRAY);
         cv.cvtColor(targetMat, targetGray, cv.COLOR_RGBA2GRAY);
 
-        // Calculate mean luminance for both images
-        const masterMean = cv.mean(masterGray)[0];
-        const targetMean = cv.mean(targetGray)[0];
+        // STEP 1: Find logo region using feature detection (center-weighted)
+        // Detect features to find the logo area
+        const akaze = new cv.AKAZE();
+        const keypointsMaster = new cv.KeyPointVector();
+        const keypointsTarget = new cv.KeyPointVector();
+        const descriptorsMaster = new cv.Mat();
+        const descriptorsTarget = new cv.Mat();
+        
+        akaze.detectAndCompute(masterGray, new cv.Mat(), keypointsMaster, descriptorsMaster);
+        akaze.detectAndCompute(targetGray, new cv.Mat(), keypointsTarget, descriptorsTarget);
+        
+        // Find bounding box of keypoints (logo region)
+        const getMasterBoundingBox = () => {
+            if (keypointsMaster.size() === 0) return null;
+            
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (let i = 0; i < keypointsMaster.size(); i++) {
+                const kp = keypointsMaster.get(i);
+                minX = Math.min(minX, kp.pt.x);
+                minY = Math.min(minY, kp.pt.y);
+                maxX = Math.max(maxX, kp.pt.x);
+                maxY = Math.max(maxY, kp.pt.y);
+            }
+            
+            // Add padding (20% on each side)
+            const width = maxX - minX;
+            const height = maxY - minY;
+            const padding = 0.2;
+            
+            minX = Math.max(0, minX - width * padding);
+            minY = Math.max(0, minY - height * padding);
+            maxX = Math.min(masterGray.cols, maxX + width * padding);
+            maxY = Math.min(masterGray.rows, maxY + height * padding);
+            
+            return { x: Math.floor(minX), y: Math.floor(minY), width: Math.floor(maxX - minX), height: Math.floor(maxY - minY) };
+        };
+        
+        const getTargetBoundingBox = () => {
+            if (keypointsTarget.size() === 0) return null;
+            
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (let i = 0; i < keypointsTarget.size(); i++) {
+                const kp = keypointsTarget.get(i);
+                minX = Math.min(minX, kp.pt.x);
+                minY = Math.min(minY, kp.pt.y);
+                maxX = Math.max(maxX, kp.pt.x);
+                maxY = Math.max(maxY, kp.pt.y);
+            }
+            
+            const width = maxX - minX;
+            const height = maxY - minY;
+            const padding = 0.2;
+            
+            minX = Math.max(0, minX - width * padding);
+            minY = Math.max(0, minY - height * padding);
+            maxX = Math.min(targetGray.cols, maxX + width * padding);
+            maxY = Math.min(targetGray.rows, maxY + height * padding);
+            
+            return { x: Math.floor(minX), y: Math.floor(minY), width: Math.floor(maxX - minX), height: Math.floor(maxY - minY) };
+        };
+        
+        const masterBox = getMasterBoundingBox();
+        const targetBox = getTargetBoundingBox();
+        
+        // Cleanup feature detection
+        akaze.delete();
+        keypointsMaster.delete();
+        keypointsTarget.delete();
+        descriptorsMaster.delete();
+        descriptorsTarget.delete();
+        
+        // Extract logo regions (or use center region if detection fails)
+        if (masterBox && masterBox.width > 50 && masterBox.height > 50) {
+            masterLogoRegion = masterGray.roi(new cv.Rect(masterBox.x, masterBox.y, masterBox.width, masterBox.height));
+            console.log(`Master logo region detected: ${masterBox.width}x${masterBox.height} at (${masterBox.x}, ${masterBox.y})`);
+        } else {
+            // Fallback: use center 60% of image
+            const centerX = Math.floor(masterGray.cols * 0.2);
+            const centerY = Math.floor(masterGray.rows * 0.2);
+            const centerW = Math.floor(masterGray.cols * 0.6);
+            const centerH = Math.floor(masterGray.rows * 0.6);
+            masterLogoRegion = masterGray.roi(new cv.Rect(centerX, centerY, centerW, centerH));
+            console.log(`Master logo region: using center fallback ${centerW}x${centerH}`);
+        }
+        
+        if (targetBox && targetBox.width > 50 && targetBox.height > 50) {
+            targetLogoRegion = targetGray.roi(new cv.Rect(targetBox.x, targetBox.y, targetBox.width, targetBox.height));
+            console.log(`Target logo region detected: ${targetBox.width}x${targetBox.height} at (${targetBox.x}, ${targetBox.y})`);
+        } else {
+            const centerX = Math.floor(targetGray.cols * 0.2);
+            const centerY = Math.floor(targetGray.rows * 0.2);
+            const centerW = Math.floor(targetGray.cols * 0.6);
+            const centerH = Math.floor(targetGray.rows * 0.6);
+            targetLogoRegion = targetGray.roi(new cv.Rect(centerX, centerY, centerW, centerH));
+            console.log(`Target logo region: using center fallback ${centerW}x${centerH}`);
+        }
 
-        // Calculate standard deviation to understand contrast
+        // STEP 2: Calculate mean luminance for LOGO REGIONS ONLY
+        const masterMean = cv.mean(masterLogoRegion)[0];
+        const targetMean = cv.mean(targetLogoRegion)[0];
+
+        // Calculate standard deviation to understand contrast IN LOGO REGION
         const masterStdDev = new cv.Mat();
         const targetStdDev = new cv.Mat();
         const masterMeanMat = new cv.Mat();
         const targetMeanMat = new cv.Mat();
         
-        cv.meanStdDev(masterGray, masterMeanMat, masterStdDev);
-        cv.meanStdDev(targetGray, targetMeanMat, targetStdDev);
+        cv.meanStdDev(masterLogoRegion, masterMeanMat, masterStdDev);
+        cv.meanStdDev(targetLogoRegion, targetMeanMat, targetStdDev);
         
         const masterStd = masterStdDev.data64F[0];
         const targetStd = targetStdDev.data64F[0];
@@ -210,7 +310,7 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         masterMeanMat.delete();
         targetMeanMat.delete();
 
-        // Calculate histogram correlation for inverted comparison
+        // STEP 3: Calculate histogram correlation for inverted comparison (LOGO REGIONS ONLY)
         const masterHist = new cv.Mat();
         const targetHist = new cv.Mat();
         const mask = new cv.Mat();
@@ -218,8 +318,8 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         // Create MatVector for calcHist (OpenCV.js requires this)
         const masterMatVec = new cv.MatVector();
         const targetMatVec = new cv.MatVector();
-        masterMatVec.push_back(masterGray);
-        targetMatVec.push_back(targetGray);
+        masterMatVec.push_back(masterLogoRegion);
+        targetMatVec.push_back(targetLogoRegion);
         
         cv.calcHist(masterMatVec, [0], mask, masterHist, [256], [0, 256]);
         cv.calcHist(targetMatVec, [0], mask, targetHist, [256], [0, 256]);
@@ -246,21 +346,38 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         targetHistFlipped.delete();
         mask.delete();
 
-        // Decision logic (relaxed thresholds for better detection):
-        // 1. If mean luminances are on opposite sides of the spectrum (one dark, one bright)
+        // STEP 4: Decision logic (LOGO-FOCUSED with relaxed thresholds)
+        // 1. Mean luminance difference (logo regions only)
         const meanDifference = Math.abs(masterMean - targetMean);
-        const isOppositeLuminance = meanDifference > 80; // Relaxed from 100 (0-255 scale)
         
-        // 2. If inverted histogram correlation is significantly better than normal
+        // 2. Histogram correlation improvement
         const correlationImprovement = invertedCorrelation - normalCorrelation;
-        const hasStrongInvertedCorrelation = correlationImprovement > 0.15; // Relaxed from 0.2
         
-        // 3. Both images should have reasonable contrast (not just solid colors)
-        const hasSufficientContrast = masterStd > 15 && targetStd > 15; // Relaxed from 20
+        // 3. Contrast check (logo regions)
+        const hasSufficientContrast = masterStd > 10 && targetStd > 10; // Very relaxed
+        
+        // Multi-criteria decision with weighted scoring:
+        let inversionScore = 0;
+        
+        // Criterion 1: Mean difference (strong indicator)
+        if (meanDifference > 60) inversionScore += 2; // Strong difference
+        else if (meanDifference > 40) inversionScore += 1; // Moderate difference
+        
+        // Criterion 2: Histogram correlation improvement (strongest indicator)
+        if (correlationImprovement > 0.15) inversionScore += 3; // Strong improvement
+        else if (correlationImprovement > 0.08) inversionScore += 2; // Moderate improvement
+        else if (correlationImprovement > 0.03) inversionScore += 1; // Slight improvement
+        
+        // Criterion 3: Inverted correlation is actually good (not just better)
+        if (invertedCorrelation > 0.5) inversionScore += 1;
+        
+        // Criterion 4: Normal correlation is poor (suggests mismatch)
+        if (normalCorrelation < 0.3) inversionScore += 1;
+        
+        // Decision: Need at least score of 3 and sufficient contrast
+        const isInverted = inversionScore >= 3 && hasSufficientContrast;
 
-        const isInverted = isOppositeLuminance && hasStrongInvertedCorrelation && hasSufficientContrast;
-
-        console.log(`Luminance Inversion Detection: masterMean=${masterMean.toFixed(1)}, targetMean=${targetMean.toFixed(1)}, meanDiff=${meanDifference.toFixed(1)}, normalCorr=${normalCorrelation.toFixed(3)}, invertedCorr=${invertedCorrelation.toFixed(3)}, improvement=${correlationImprovement.toFixed(3)}, masterStd=${masterStd.toFixed(1)}, targetStd=${targetStd.toFixed(1)} -> ${isInverted ? 'INVERTED' : 'NORMAL'}`);
+        console.log(`Luminance Inversion Detection [LOGO-FOCUSED]: masterMean=${masterMean.toFixed(1)}, targetMean=${targetMean.toFixed(1)}, meanDiff=${meanDifference.toFixed(1)}, normalCorr=${normalCorrelation.toFixed(3)}, invertedCorr=${invertedCorrelation.toFixed(3)}, improvement=${correlationImprovement.toFixed(3)}, score=${inversionScore}/7, masterStd=${masterStd.toFixed(1)}, targetStd=${targetStd.toFixed(1)} -> ${isInverted ? '🔄 INVERTED' : '✓ NORMAL'}`);
 
         return isInverted;
 
@@ -273,6 +390,8 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         if (targetMat && !targetMat.isDeleted()) targetMat.delete();
         if (masterGray && !masterGray.isDeleted()) masterGray.delete();
         if (targetGray && !targetGray.isDeleted()) targetGray.delete();
+        // Note: ROI regions (masterLogoRegion, targetLogoRegion) don't need explicit deletion
+        // as they are views into the parent Mat and will be cleaned up with the parent
     }
 };
 
