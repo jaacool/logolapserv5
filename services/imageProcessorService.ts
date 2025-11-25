@@ -246,17 +246,17 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         targetHistFlipped.delete();
         mask.delete();
 
-        // Decision logic:
+        // Decision logic (relaxed thresholds for better detection):
         // 1. If mean luminances are on opposite sides of the spectrum (one dark, one bright)
         const meanDifference = Math.abs(masterMean - targetMean);
-        const isOppositeLuminance = meanDifference > 100; // Significant difference (0-255 scale)
+        const isOppositeLuminance = meanDifference > 80; // Relaxed from 100 (0-255 scale)
         
         // 2. If inverted histogram correlation is significantly better than normal
         const correlationImprovement = invertedCorrelation - normalCorrelation;
-        const hasStrongInvertedCorrelation = correlationImprovement > 0.2;
+        const hasStrongInvertedCorrelation = correlationImprovement > 0.15; // Relaxed from 0.2
         
         // 3. Both images should have reasonable contrast (not just solid colors)
-        const hasSufficientContrast = masterStd > 20 && targetStd > 20;
+        const hasSufficientContrast = masterStd > 15 && targetStd > 15; // Relaxed from 20
 
         const isInverted = isOppositeLuminance && hasStrongInvertedCorrelation && hasSufficientContrast;
 
@@ -276,21 +276,55 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
     }
 };
 
-// Invert image luminance - creates a true inverted image (not just a filter)
-// Returns a new HTMLImageElement with inverted colors
+// Invert image luminance ONLY (not color channels) - creates a true inverted image
+// Uses HSV color space to invert only the V (Value/Brightness) channel
+// Returns a new HTMLImageElement with inverted luminance but preserved colors
 export const invertImageLuminance = async (image: HTMLImageElement): Promise<HTMLImageElement> => {
     let mat: any;
+    let hsv: any;
+    let channels: any;
     let inverted: any;
 
     try {
         // Load image to mat
         mat = loadImageToMat(image);
         
-        // Create inverted mat
-        inverted = new cv.Mat();
+        // Convert to HSV to separate luminance (V channel) from color (H, S)
+        hsv = new cv.Mat();
+        cv.cvtColor(mat, hsv, cv.COLOR_RGBA2RGB);
+        const rgb = new cv.Mat();
+        cv.cvtColor(hsv, rgb, cv.COLOR_RGBA2RGB); // Ensure RGB
+        cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+        rgb.delete();
         
-        // Invert: 255 - pixel value for each channel
-        cv.bitwise_not(mat, inverted);
+        // Split into H, S, V channels
+        channels = new cv.MatVector();
+        cv.split(hsv, channels);
+        
+        // Get V channel (brightness/luminance)
+        const vChannel = channels.get(2);
+        
+        // Invert only the V channel: 255 - V
+        const invertedV = new cv.Mat();
+        cv.bitwise_not(vChannel, invertedV);
+        
+        // Replace V channel with inverted version
+        channels.set(2, invertedV);
+        
+        // Merge channels back
+        const hsvInverted = new cv.Mat();
+        cv.merge(channels, hsvInverted);
+        
+        // Convert back to RGBA
+        inverted = new cv.Mat();
+        const rgbInverted = new cv.Mat();
+        cv.cvtColor(hsvInverted, rgbInverted, cv.COLOR_HSV2RGB);
+        cv.cvtColor(rgbInverted, inverted, cv.COLOR_RGB2RGBA);
+        
+        // Cleanup intermediate mats
+        invertedV.delete();
+        hsvInverted.delete();
+        rgbInverted.delete();
         
         // Convert to canvas and then to image
         const canvas = document.createElement('canvas');
@@ -309,6 +343,8 @@ export const invertImageLuminance = async (image: HTMLImageElement): Promise<HTM
     } finally {
         // Cleanup
         if (mat && !mat.isDeleted()) mat.delete();
+        if (hsv && !hsv.isDeleted()) hsv.delete();
+        if (channels && !channels.isDeleted()) channels.delete();
         if (inverted && !inverted.isDeleted()) inverted.delete();
     }
 };
@@ -1009,11 +1045,32 @@ export const processImageLocally = (
             let targetMat = loadImageToMat(targetImage); mats.push(targetMat);
             
             // If luminance inverted, invert the target for matching
+            // This ensures all alignment algorithms (Simple/Affine/Perspective) work on matching luminance
             if (isLuminanceInverted && !isMaster) {
-                console.log('Inverting target image for matching (luminance inverted detected)');
+                console.log('Inverting target luminance for matching (all algorithms: Simple/Affine/Perspective will use inverted version)');
+                // Invert luminance only (V channel in HSV)
+                const hsv = new cv.Mat(); mats.push(hsv);
+                cv.cvtColor(targetMat, hsv, cv.COLOR_RGBA2RGB);
+                const rgb = new cv.Mat(); mats.push(rgb);
+                cv.cvtColor(hsv, rgb, cv.COLOR_RGBA2RGB);
+                cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+                
+                const channels = new cv.MatVector();
+                cv.split(hsv, channels);
+                const vChannel = channels.get(2);
+                const invertedV = new cv.Mat(); mats.push(invertedV);
+                cv.bitwise_not(vChannel, invertedV);
+                channels.set(2, invertedV);
+                
+                const hsvInverted = new cv.Mat(); mats.push(hsvInverted);
+                cv.merge(channels, hsvInverted);
+                
                 const invertedTargetMat = new cv.Mat(); mats.push(invertedTargetMat);
-                cv.bitwise_not(targetMat, invertedTargetMat);
-                targetMat = invertedTargetMat; // Use inverted version for matching
+                cv.cvtColor(hsvInverted, invertedTargetMat, cv.COLOR_HSV2RGB);
+                cv.cvtColor(invertedTargetMat, invertedTargetMat, cv.COLOR_RGB2RGBA);
+                
+                channels.delete();
+                targetMat = invertedTargetMat; // Use inverted version for ALL matching algorithms
             }
 
             if (masterMat.empty() || targetMat.empty()) {
@@ -1236,12 +1293,32 @@ export const processImageLocally = (
                 blurredMat.copyTo(paddedMat, invertedMask);
             }
             
-            // If luminance inverted, invert back to original before output
+            // If luminance inverted, invert back to original luminance before output
             let finalOutputMat = paddedMat;
             if (isLuminanceInverted && !isMaster) {
-                console.log('Inverting output back to original luminance');
+                console.log('Inverting output back to original luminance (V channel only)');
+                // Invert back luminance only (V channel in HSV)
+                const hsv = new cv.Mat(); mats.push(hsv);
+                cv.cvtColor(paddedMat, hsv, cv.COLOR_RGBA2RGB);
+                const rgb = new cv.Mat(); mats.push(rgb);
+                cv.cvtColor(hsv, rgb, cv.COLOR_RGBA2RGB);
+                cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+                
+                const channels = new cv.MatVector();
+                cv.split(hsv, channels);
+                const vChannel = channels.get(2);
+                const revertedV = new cv.Mat(); mats.push(revertedV);
+                cv.bitwise_not(vChannel, revertedV);
+                channels.set(2, revertedV);
+                
+                const hsvReverted = new cv.Mat(); mats.push(hsvReverted);
+                cv.merge(channels, hsvReverted);
+                
                 const revertedMat = new cv.Mat(); mats.push(revertedMat);
-                cv.bitwise_not(paddedMat, revertedMat);
+                cv.cvtColor(hsvReverted, revertedMat, cv.COLOR_HSV2RGB);
+                cv.cvtColor(revertedMat, revertedMat, cv.COLOR_RGB2RGBA);
+                
+                channels.delete();
                 finalOutputMat = revertedMat;
             }
             
