@@ -618,33 +618,6 @@ export default function App() {
                 }
                 stage2Results = [...stage1Results, ...simpleMatchResults];
             }
-            
-            if (willRunEnsemble && stage2Results.length > 1) {
-                currentStage++;
-                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying ensemble correction...`);
-                await yieldToMain();
-                
-                const masterResult = stage2Results.find(f => f.id === masterFileId);
-                if (masterResult) {
-                    const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
-                    let refinedResults: ProcessedFile[] = [];
-                    for (const file of stage2Results) {
-                        if (file.id !== masterFileId) {
-                            try {
-                                const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement, isAiEdgeFillEnabled);
-                                refinedResults.push({ ...file, processedUrl: refinedUrl });
-                            } catch (err) {
-                                console.error("Error during ensemble refinement:", file.originalName, err);
-                                refinedResults.push(file);
-                            }
-                        } else {
-                            refinedResults.push(file);
-                        }
-                    }
-                    stage2Results = refinedResults;
-                    setProcessedFiles(stage2Results);
-                }
-            }
 
             let stage3Results = stage2Results;
             if (perspectiveFiles.length > 0) {
@@ -674,7 +647,40 @@ export default function App() {
                 }
             }
 
-            let stage4Results = stage3Results;
+            // Apply Ensemble Correction AFTER all alignments (Standard + Simple + Perspective)
+            // This ensures ALL images get refined with the golden template
+            let stage3_5Results = stage3Results;
+            if (willRunEnsemble && stage3Results.length > 1) {
+                currentStage++;
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying ensemble correction (P+I+E)...`);
+                await yieldToMain();
+                
+                const masterResult = stage3Results.find(f => f.id === masterFileId);
+                if (masterResult) {
+                    const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
+                    let refinedResults: ProcessedFile[] = [];
+                    for (const file of stage3Results) {
+                        if (file.id !== masterFileId) {
+                            try {
+                                console.log(`Applying ensemble correction to ${file.originalName}...`);
+                                const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement, isAiEdgeFillEnabled);
+                                refinedResults.push({ ...file, processedUrl: refinedUrl });
+                            } catch (err) {
+                                console.error("Error during ensemble refinement:", file.originalName, err);
+                                refinedResults.push(file);
+                            }
+                        } else {
+                            refinedResults.push(file); // Master stays as-is
+                        }
+                        setProcessedFiles([...refinedResults, ...stage3Results.slice(refinedResults.length)]);
+                        await yieldToMain();
+                    }
+                    stage3_5Results = refinedResults;
+                    setProcessedFiles(stage3_5Results);
+                }
+            }
+
+            let stage4Results = stage3_5Results;
             if (willRunEdgeFill) {
                 currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Performing AI Edge Fill...`);
