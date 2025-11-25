@@ -7,14 +7,20 @@ interface ImageGridProps {
   masterFileId: string | null;
   onSelectMaster: (id: string) => void;
   onToggleSimpleMatch: (id: string) => void;
+  onToggleLuminanceInversion: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
-export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSelectMaster, onToggleSimpleMatch, onDelete }) => {
+export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSelectMaster, onToggleSimpleMatch, onToggleLuminanceInversion, onDelete }) => {
   
   const handleSimpleMatchClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // Prevent master selection when clicking the icon
     onToggleSimpleMatch(id);
+  }
+
+  const handleInversionClick = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevent master selection when clicking the icon
+    onToggleLuminanceInversion(id);
   }
 
   const handleDeleteClick = (e: React.MouseEvent, id: string) => {
@@ -35,7 +41,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
         </p>
         <p className="text-sm text-gray-400 flex items-center gap-2">
           <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-500/90 rounded-full"><InvertIcon className="w-4 h-4 text-white"/></span>
-          = Inverted luminance detected (will be auto-corrected)
+          = Inverted luminance (auto-detected or manual toggle)
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
@@ -62,13 +68,15 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
                   <XIcon className="w-4 h-4" />
               </button>
 
-              {isInverted && !isMaster && (
-                <div
-                  className="absolute top-1 left-1 p-1.5 rounded-full bg-purple-500/90 text-white"
-                  title="Luminance Inverted (will be processed as negative)"
+              {!isMaster && (
+                <button
+                  onClick={(e) => handleInversionClick(e, file.id)}
+                  className={`absolute top-1 left-1 p-1.5 rounded-full transition-colors duration-200
+                    ${isInverted ? 'bg-purple-500/90 text-white' : 'bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-purple-500/70 hover:text-white'}`}
+                  title={isInverted ? "Inverted (Click to disable)" : "Normal (Click to invert)"}
                 >
                   <InvertIcon className="w-4 h-4" />
-                </div>
+                </button>
               )}
 
               <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

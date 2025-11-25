@@ -259,6 +259,19 @@ export default function App() {
     );
   }, []);
 
+  const handleToggleLuminanceInversion = useCallback((fileId: string) => {
+    setUploadedFiles(prevFiles => 
+      prevFiles.map(file => 
+        file.id === fileId 
+          ? { 
+              ...file, 
+              isLuminanceInverted: !file.isLuminanceInverted
+            } 
+          : file
+      )
+    );
+  }, []);
+
   const handleBackToSelection = useCallback(() => {
     setProcessedFiles([]);
     setProcessingStatus('');
@@ -1029,6 +1042,7 @@ export default function App() {
                                 masterFileId={masterFileId} 
                                 onSelectMaster={handleSelectMaster} 
                                 onToggleSimpleMatch={handleToggleSimpleMatch}
+                                onToggleLuminanceInversion={handleToggleLuminanceInversion}
                                 onDelete={handleDeleteUploadedFile}
                             />
                         )}
