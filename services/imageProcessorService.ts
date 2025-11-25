@@ -1160,19 +1160,24 @@ export const processImageLocally = (
             // Load master image
             const masterMat = loadImageToMat(masterImage); mats.push(masterMat);
             
-            // Load target image and invert if necessary
-            let targetMat = loadImageToMat(targetImage); mats.push(targetMat);
+            // Load target image (ORIGINAL)
+            // We will apply the final transformation to this original image
+            const originalTargetMat = loadImageToMat(targetImage); mats.push(originalTargetMat);
             
-            // If luminance inverted, invert the target for matching
-            // SIMPLE APPROACH: Just invert all channels - works better for feature detection
+            // Prepare target mat for MATCHING (Inverted if needed)
+            let matchingTargetMat = originalTargetMat;
+            
+            // If luminance inverted, create an inverted copy strictly for MATCHING analysis
+            // We will calculate the transformation using this inverted copy,
+            // but apply the transformation to the ORIGINAL image later.
             if (isLuminanceInverted && !isMaster) {
-                console.log('Inverting target image for matching (all algorithms: Simple/Affine/Perspective will use inverted version)');
-                const invertedTargetMat = new cv.Mat(); mats.push(invertedTargetMat);
-                cv.bitwise_not(targetMat, invertedTargetMat);
-                targetMat = invertedTargetMat; // Use inverted version for ALL matching algorithms
+                console.log('Creating inverted copy for matching analysis only (transformation will be applied to original)');
+                const invertedMat = new cv.Mat(); mats.push(invertedMat);
+                cv.bitwise_not(originalTargetMat, invertedMat);
+                matchingTargetMat = invertedMat;
             }
 
-            if (masterMat.empty() || targetMat.empty()) {
+            if (masterMat.empty() || matchingTargetMat.empty()) {
                 throw new Error("Could not load images into OpenCV format.");
             }
 
@@ -1192,7 +1197,7 @@ export const processImageLocally = (
                 // If the user explicitly enabled Simple Match, respect that choice
                 // and skip the automatic mode selection.
                 if (isSimpleMatchEnabled) {
-                    const alignResult = performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled);
+                    const alignResult = performSimpleAlignment(masterMat, matchingTargetMat, isGreedyMode, isRefinementEnabled);
                     transformMatrix = alignResult.transformMatrix;
                     mats.push(transformMatrix);
 
@@ -1200,7 +1205,7 @@ export const processImageLocally = (
                     const debugMat = new cv.Mat(); mats.push(debugMat);
                     goodMatchesVec = new cv.DMatchVector();
                     alignResult.goodMatches.forEach((m: any) => goodMatchesVec.push_back(m));
-                    cv.drawMatches(targetMat, alignResult.keypointsTarget, masterMat, alignResult.keypointsBase, goodMatchesVec, debugMat);
+                    cv.drawMatches(matchingTargetMat, alignResult.keypointsTarget, masterMat, alignResult.keypointsBase, goodMatchesVec, debugMat);
                     cv.imshow(debugCanvas, debugMat);
                     debugUrl = debugCanvas.toDataURL('image/png');
 
@@ -1225,7 +1230,7 @@ export const processImageLocally = (
 
                     // Candidate 1: Simple Match
                     try {
-                        const simple = performSimpleAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled);
+                        const simple = performSimpleAlignment(masterMat, matchingTargetMat, isGreedyMode, isRefinementEnabled);
                         const simpleError = computeReprojectionError(simple.keypointsBase, simple.keypointsTarget, simple.goodMatches, simple.transformMatrix);
                         candidates.push({
                             mode: 'simple',
@@ -1241,7 +1246,7 @@ export const processImageLocally = (
 
                     // Candidate 2: Affine (robust alignment without perspective)
                     try {
-                        const affine = performRobustAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, false);
+                        const affine = performRobustAlignment(masterMat, matchingTargetMat, isGreedyMode, isRefinementEnabled, false);
                         const affineError = computeReprojectionError(affine.keypointsBase, affine.keypointsTarget, affine.goodMatches, affine.transformMatrix);
                         candidates.push({
                             mode: 'affine',
@@ -1258,7 +1263,7 @@ export const processImageLocally = (
                     // Candidate 3: Perspective (only if enabled via stability level)
                     if (isPerspectiveCorrectionEnabled) {
                         try {
-                            const perspective = performRobustAlignment(masterMat, targetMat, isGreedyMode, isRefinementEnabled, true);
+                            const perspective = performRobustAlignment(masterMat, matchingTargetMat, isGreedyMode, isRefinementEnabled, true);
                             const perspectiveError = computeReprojectionError(perspective.keypointsBase, perspective.keypointsTarget, perspective.goodMatches, perspective.transformMatrix);
                             candidates.push({
                                 mode: 'perspective',
@@ -1295,7 +1300,7 @@ export const processImageLocally = (
                     const debugMat = new cv.Mat(); mats.push(debugMat);
                     goodMatchesVec = new cv.DMatchVector();
                     best.goodMatches.forEach((m: any) => goodMatchesVec.push_back(m));
-                    cv.drawMatches(targetMat, best.keypointsTarget, masterMat, best.keypointsBase, goodMatchesVec, debugMat);
+                    cv.drawMatches(matchingTargetMat, best.keypointsTarget, masterMat, best.keypointsBase, goodMatchesVec, debugMat);
                     cv.imshow(debugCanvas, debugMat);
                     debugUrl = debugCanvas.toDataURL('image/png');
 
@@ -1325,17 +1330,20 @@ export const processImageLocally = (
             // Create a mask to track valid content (White = Content, Black = Border)
             // We need this to distinguish between "original content" and "extrapolated border" 
             // especially when using Reflect/Replicate which fills the border with pixels.
-            const mask = new cv.Mat(targetMat.rows, targetMat.cols, cv.CV_8UC1, new cv.Scalar(255)); mats.push(mask);
+            // Use originalTargetMat dimensions
+            const mask = new cv.Mat(originalTargetMat.rows, originalTargetMat.cols, cv.CV_8UC1, new cv.Scalar(255)); mats.push(mask);
             const warpedMask = new cv.Mat(); mats.push(warpedMask);
 
             const usesHomography = transformMatrix.rows === 3;
 
             if(usesHomography) {
-                cv.warpPerspective(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
+                // Apply transformation to ORIGINAL TARGET (not matching/inverted one)
+                cv.warpPerspective(originalTargetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
                 // Warp mask with CONSTANT (Black) border to mark extrapolated areas
                 cv.warpPerspective(mask, warpedMask, transformMatrix, dsize, cv.INTER_NEAREST, cv.BORDER_CONSTANT, new cv.Scalar(0));
             } else {
-                cv.warpAffine(targetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
+                // Apply transformation to ORIGINAL TARGET (not matching/inverted one)
+                cv.warpAffine(originalTargetMat, warpedTarget, transformMatrix, dsize, cv.INTER_LINEAR, borderMode, borderValue);
                 cv.warpAffine(mask, warpedMask, transformMatrix, dsize, cv.INTER_NEAREST, cv.BORDER_CONSTANT, new cv.Scalar(0));
             }
 

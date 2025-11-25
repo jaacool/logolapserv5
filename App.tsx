@@ -577,8 +577,8 @@ export default function App() {
             if (hasSimpleMatchFiles) totalStages++;
             if (hasPerspectiveFiles) totalStages++;
             if (willRunEnsemble) totalStages++;
-            const hasInvertedImagesForRevert = uploadedFiles.some(f => f.isLuminanceInverted);
-            if (hasInvertedImagesForRevert) totalStages++; // Stage 3.6: Revert inverted images
+            // Stage 3.6 removed: const hasInvertedImagesForRevert = uploadedFiles.some(f => f.isLuminanceInverted);
+            // if (hasInvertedImagesForRevert) totalStages++; 
             if (willRunEdgeFill) totalStages++;
             if (willRunAI) totalStages++;
 
@@ -676,6 +676,16 @@ export default function App() {
                     let refinedResults: ProcessedFile[] = [];
                     for (const file of stage3Results) {
                         if (file.id !== masterFileId) {
+                            const originalFile = uploadedFiles.find(f => f.id === file.id);
+                            // SKIP Ensemble Correction for inverted images
+                            // Since processImageLocally now returns the original (non-inverted) image aligned,
+                            // but the master is likely normal, refining them against each other would fail/wobble.
+                            if (originalFile?.isLuminanceInverted) {
+                                console.log(`Skipping ensemble correction for inverted image ${file.originalName}`);
+                                refinedResults.push(file);
+                                continue;
+                            }
+
                             try {
                                 console.log(`Applying ensemble correction to ${file.originalName}...`);
                                 const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement, isAiEdgeFillEnabled);
@@ -695,38 +705,9 @@ export default function App() {
                 }
             }
 
-            // CRITICAL: Invert back inverted images AFTER Ensemble Correction
-            // This ensures Ensemble Correction works on matching luminance, then we restore original
-            let stage3_6Results = stage3_5Results;
-            const hasInvertedImages = uploadedFiles.some(f => f.isLuminanceInverted);
-            if (hasInvertedImages) {
-                currentStage++;
-                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Reverting inverted images to original luminance...`);
-                await yieldToMain();
-                
-                let revertedResults: ProcessedFile[] = [];
-                for (const file of stage3_6Results) {
-                    const originalFile = uploadedFiles.find(f => f.id === file.id);
-                    if (originalFile?.isLuminanceInverted) {
-                        try {
-                            console.log(`Reverting ${file.originalName} back to original luminance...`);
-                            const revertedUrl = await invertImage(file.processedUrl);
-                            revertedResults.push({ ...file, processedUrl: revertedUrl });
-                        } catch (err) {
-                            console.error("Error reverting inverted image:", file.originalName, err);
-                            revertedResults.push(file);
-                        }
-                    } else {
-                        revertedResults.push(file); // Not inverted, keep as-is
-                    }
-                    setProcessedFiles([...revertedResults, ...stage3_6Results.slice(revertedResults.length)]);
-                    await yieldToMain();
-                }
-                stage3_6Results = revertedResults;
-                setProcessedFiles(stage3_6Results);
-            }
+            // Stage 3.6 (Revert Inversion) REMOVED - processImageLocally now handles original image transformation directly
 
-            let stage4Results = stage3_6Results;
+            let stage4Results = stage3_5Results;
             if (willRunEdgeFill) {
                 currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Performing AI Edge Fill...`);
