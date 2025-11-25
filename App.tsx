@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -562,8 +562,10 @@ export default function App() {
             
             let totalStages = 1; // Start with 1 for Standard
             if (hasSimpleMatchFiles) totalStages++;
-            if (willRunEnsemble) totalStages++;
             if (hasPerspectiveFiles) totalStages++;
+            if (willRunEnsemble) totalStages++;
+            const hasInvertedImagesForRevert = uploadedFiles.some(f => f.isLuminanceInverted);
+            if (hasInvertedImagesForRevert) totalStages++; // Stage 3.6: Revert inverted images
             if (willRunEdgeFill) totalStages++;
             if (willRunAI) totalStages++;
 
@@ -680,7 +682,38 @@ export default function App() {
                 }
             }
 
-            let stage4Results = stage3_5Results;
+            // CRITICAL: Invert back inverted images AFTER Ensemble Correction
+            // This ensures Ensemble Correction works on matching luminance, then we restore original
+            let stage3_6Results = stage3_5Results;
+            const hasInvertedImages = uploadedFiles.some(f => f.isLuminanceInverted);
+            if (hasInvertedImages) {
+                currentStage++;
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Reverting inverted images to original luminance...`);
+                await yieldToMain();
+                
+                let revertedResults: ProcessedFile[] = [];
+                for (const file of stage3_6Results) {
+                    const originalFile = uploadedFiles.find(f => f.id === file.id);
+                    if (originalFile?.isLuminanceInverted) {
+                        try {
+                            console.log(`Reverting ${file.originalName} back to original luminance...`);
+                            const revertedUrl = await invertImage(file.processedUrl);
+                            revertedResults.push({ ...file, processedUrl: revertedUrl });
+                        } catch (err) {
+                            console.error("Error reverting inverted image:", file.originalName, err);
+                            revertedResults.push(file);
+                        }
+                    } else {
+                        revertedResults.push(file); // Not inverted, keep as-is
+                    }
+                    setProcessedFiles([...revertedResults, ...stage3_6Results.slice(revertedResults.length)]);
+                    await yieldToMain();
+                }
+                stage3_6Results = revertedResults;
+                setProcessedFiles(stage3_6Results);
+            }
+
+            let stage4Results = stage3_6Results;
             if (willRunEdgeFill) {
                 currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Performing AI Edge Fill...`);

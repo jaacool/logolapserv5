@@ -356,26 +356,26 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         // 3. Contrast check (logo regions)
         const hasSufficientContrast = masterStd > 15 && targetStd > 15; // Stricter contrast requirement
         
-        // Multi-criteria decision with weighted scoring (STRICTER):
+        // Multi-criteria decision with weighted scoring (VERY STRICT):
         let inversionScore = 0;
         
-        // Criterion 1: Mean difference (strong indicator) - STRICTER
-        if (meanDifference > 80) inversionScore += 2; // Strong difference (raised from 60)
-        else if (meanDifference > 60) inversionScore += 1; // Moderate difference (raised from 40)
+        // Criterion 1: Mean difference (strong indicator) - VERY STRICT
+        if (meanDifference > 100) inversionScore += 2; // Strong difference (raised from 80)
+        else if (meanDifference > 80) inversionScore += 1; // Moderate difference (raised from 60)
         
-        // Criterion 2: Histogram correlation improvement (strongest indicator) - STRICTER
-        if (correlationImprovement > 0.25) inversionScore += 3; // Strong improvement (raised from 0.15)
-        else if (correlationImprovement > 0.15) inversionScore += 2; // Moderate improvement (raised from 0.08)
-        else if (correlationImprovement > 0.08) inversionScore += 1; // Slight improvement (raised from 0.03)
+        // Criterion 2: Histogram correlation improvement (strongest indicator) - VERY STRICT
+        if (correlationImprovement > 0.35) inversionScore += 3; // Strong improvement (raised from 0.25)
+        else if (correlationImprovement > 0.25) inversionScore += 2; // Moderate improvement (raised from 0.15)
+        else if (correlationImprovement > 0.15) inversionScore += 1; // Slight improvement (raised from 0.08)
         
-        // Criterion 3: Inverted correlation is actually good (not just better) - STRICTER
-        if (invertedCorrelation > 0.6) inversionScore += 1; // Raised from 0.5
+        // Criterion 3: Inverted correlation is actually good (not just better) - VERY STRICT
+        if (invertedCorrelation > 0.7) inversionScore += 1; // Raised from 0.6
         
-        // Criterion 4: Normal correlation is poor (suggests mismatch) - STRICTER
-        if (normalCorrelation < 0.2) inversionScore += 1; // Lowered from 0.3
+        // Criterion 4: Normal correlation is poor (suggests mismatch) - VERY STRICT
+        if (normalCorrelation < 0.15) inversionScore += 1; // Lowered from 0.2
         
-        // Decision: Need at least score of 4 (raised from 3) and sufficient contrast
-        const isInverted = inversionScore >= 4 && hasSufficientContrast;
+        // Decision: Need at least score of 5 (raised from 4) and sufficient contrast
+        const isInverted = inversionScore >= 5 && hasSufficientContrast;
 
         console.log(`Luminance Inversion Detection [LOGO-FOCUSED]: masterMean=${masterMean.toFixed(1)}, targetMean=${targetMean.toFixed(1)}, meanDiff=${meanDifference.toFixed(1)}, normalCorr=${normalCorrelation.toFixed(3)}, invertedCorr=${invertedCorrelation.toFixed(3)}, improvement=${correlationImprovement.toFixed(3)}, score=${inversionScore}/7, masterStd=${masterStd.toFixed(1)}, targetStd=${targetStd.toFixed(1)} -> ${isInverted ? '🔄 INVERTED' : '✓ NORMAL'}`);
 
@@ -1392,19 +1392,14 @@ export const processImageLocally = (
                 blurredMat.copyTo(paddedMat, invertedMask);
             }
             
-            // If luminance inverted, invert back to original before output
-            let finalOutputMat = paddedMat;
-            if (isLuminanceInverted && !isMaster) {
-                console.log('Inverting output back to original');
-                const revertedMat = new cv.Mat(); mats.push(revertedMat);
-                cv.bitwise_not(paddedMat, revertedMat);
-                finalOutputMat = revertedMat;
-            }
+            // NOTE: For inverted images, we do NOT invert back here!
+            // The image stays inverted through the entire pipeline (including Ensemble Correction)
+            // and will be inverted back AFTER Ensemble Correction in App.tsx
             
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = finalWidth;
             finalCanvas.height = finalHeight;
-            cv.imshow(finalCanvas, finalOutputMat);
+            cv.imshow(finalCanvas, paddedMat);
             const processedUrl = finalCanvas.toDataURL('image/png');
             
             resolve({ processedUrl, debugUrl });
@@ -1418,6 +1413,34 @@ export const processImageLocally = (
     });
 };
 
+
+// Invert an image (from data URL) - simple bitwise_not on all channels
+export const invertImage = async (imageUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const mat = loadImageToMat(img);
+                const inverted = new cv.Mat();
+                cv.bitwise_not(mat, inverted);
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                cv.imshow(canvas, inverted);
+                const invertedUrl = canvas.toDataURL('image/png');
+                
+                mat.delete();
+                inverted.delete();
+                resolve(invertedUrl);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        img.onerror = reject;
+        img.src = imageUrl;
+    });
+};
 
 export const refineWithGoldenTemplate = async (
     processedImageUrl: string,
