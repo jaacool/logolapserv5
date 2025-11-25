@@ -73,8 +73,9 @@ export default function App() {
   const isGreedyMode = false;
   // Derived states from stabilityLevel
   const isRefinementEnabled = stabilityLevel >= 1; // Refinement active from level 1
-  const isPerspectiveCorrectionEnabled = stabilityLevel >= 2; // Perspective from level 2
-  const isEnsembleCorrectionEnabled = stabilityLevel >= 3;
+  // NEW LOGIC per User Request: Medium (2) = I + E (No P), High (3) = I + P + E
+  const isPerspectiveCorrectionEnabled = stabilityLevel >= 3; // Perspective active only at level 3
+  const isEnsembleCorrectionEnabled = stabilityLevel >= 2; // Ensemble active from level 2
   const [isAiEdgeFillEnabled, setIsAiEdgeFillEnabled] = useState(false);
   const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
   const [isAiVariationsEnabled, setIsAiVariationsEnabled] = useState(false);

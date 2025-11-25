@@ -7,8 +7,8 @@ interface StabilitySliderProps {
 
 const STABILITY_LEVELS = [
   { value: 1, label: 'Rough', description: 'Iterative Refinement (I)' },
-  { value: 2, label: 'Medium', description: 'Perspective Correction (P) + I' },
-  { value: 3, label: 'Smooth AF!', description: 'P + I + Ensemble Correction (E)' }
+  { value: 2, label: 'Medium', description: 'I + Ensemble Correction (E)' },
+  { value: 3, label: 'Smooth AF!', description: 'Perspective (P) + I + E' }
 ];
 
 export const StabilitySlider: React.FC<StabilitySliderProps> = ({ value, onChange }) => {
