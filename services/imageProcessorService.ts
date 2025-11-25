@@ -215,8 +215,18 @@ export const detectLuminanceInversion = (masterImage: HTMLImageElement, targetIm
         const targetHist = new cv.Mat();
         const mask = new cv.Mat();
         
-        cv.calcHist([masterGray], [0], mask, masterHist, [256], [0, 256]);
-        cv.calcHist([targetGray], [0], mask, targetHist, [256], [0, 256]);
+        // Create MatVector for calcHist (OpenCV.js requires this)
+        const masterMatVec = new cv.MatVector();
+        const targetMatVec = new cv.MatVector();
+        masterMatVec.push_back(masterGray);
+        targetMatVec.push_back(targetGray);
+        
+        cv.calcHist(masterMatVec, [0], mask, masterHist, [256], [0, 256]);
+        cv.calcHist(targetMatVec, [0], mask, targetHist, [256], [0, 256]);
+        
+        // Cleanup MatVectors
+        masterMatVec.delete();
+        targetMatVec.delete();
         
         // Normalize histograms
         cv.normalize(masterHist, masterHist, 0, 1, cv.NORM_MINMAX);
