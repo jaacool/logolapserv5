@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
-import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
@@ -546,6 +546,30 @@ export default function App() {
                 return;
             }
 
+            // ========== DUAL PIPELINE: NORMAL vs INVERTED ==========
+            // Split files into two groups:
+            // 1. Normal files (not inverted) - use original master
+            // 2. Inverted files (isLuminanceInverted=true) - use inverted master
+            
+            const normalFiles = uploadedFiles.filter(f => !f.isLuminanceInverted && f.id !== masterFileId);
+            const invertedFiles = uploadedFiles.filter(f => f.isLuminanceInverted && f.id !== masterFileId);
+            
+            console.log(`DUAL PIPELINE: ${normalFiles.length} normal files, ${invertedFiles.length} inverted files`);
+            
+            // Create inverted master if we have inverted files
+            let invertedMasterElement: HTMLImageElement | null = null;
+            if (invertedFiles.length > 0) {
+                setProcessingStatus('Creating inverted master image...');
+                await yieldToMain();
+                try {
+                    invertedMasterElement = await createInvertedMasterImage(masterFile.imageElement);
+                    console.log('✅ Inverted master image created successfully');
+                } catch (err) {
+                    console.error('Failed to create inverted master:', err);
+                    setError('Failed to create inverted master image');
+                }
+            }
+
             // Filter files based on their flags and current stability level
             // At level 1 (Rough), perspective correction is disabled, so treat all files as standard
             const standardFiles = uploadedFiles.filter(f => 
@@ -558,28 +582,17 @@ export default function App() {
                 : [];
             
             // Calculate total stages dynamically based on enabled features and file counts
-            const hasStandardFiles = standardFiles.length > 0;
             const hasSimpleMatchFiles = simpleMatchFiles.length > 0;
             const hasPerspectiveFiles = perspectiveFiles.length > 0;
-            const willRunEnsemble = isEnsembleCorrectionEnabled && uploadedFiles.length > 1; // Estimate
+            const hasInvertedFiles = invertedFiles.length > 0;
+            const willRunEnsemble = isEnsembleCorrectionEnabled && uploadedFiles.length > 1;
             const willRunEdgeFill = isAiEdgeFillEnabled && apiKey;
             const willRunAI = isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey;
 
-            // Always at least one stage for standard (or it skips but we count it as the base stage)
-            // Actually let's be precise:
-            // Stage 1: Standard (Always runs for standard files)
-            // Stage 2: Simple Match (Only if files exist)
-            // Stage 3: Ensemble (Only if enabled and likely needed)
-            // Stage 4: Perspective (Only if files exist)
-            // Stage 5: Edge Fill (Only if enabled)
-            // Stage 6: AI Variations (Only if enabled)
-            
             let totalStages = 1; // Start with 1 for Standard
             if (hasSimpleMatchFiles) totalStages++;
             if (hasPerspectiveFiles) totalStages++;
-            if (willRunEnsemble) totalStages++;
-            // Stage 3.6 removed: const hasInvertedImagesForRevert = uploadedFiles.some(f => f.isLuminanceInverted);
-            // if (hasInvertedImagesForRevert) totalStages++; 
+            if (willRunEnsemble) totalStages++; // Now includes separate ensemble for normal AND inverted
             if (willRunEdgeFill) totalStages++;
             if (willRunAI) totalStages++;
 
@@ -588,13 +601,22 @@ export default function App() {
             setProcessingStatus(`Stage ${currentStage}/${totalStages}: Aligning standard images...`);
             await yieldToMain();
 
+            // Helper to get the correct master for a file
+            const getMasterForFile = (file: UploadedFile): HTMLImageElement => {
+                if (file.isLuminanceInverted && invertedMasterElement) {
+                    return invertedMasterElement;
+                }
+                return masterFile.imageElement;
+            };
+
             let stage1Results: ProcessedFile[] = [];
             for (const targetFile of standardFiles) {
                 try {
+                    const masterToUse = getMasterForFile(targetFile);
                     let { processedUrl, debugUrl } = await processImageLocally(
-                        masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
+                        masterToUse, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
                         false, isSimpleMatchEnabled, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled,
-                        targetFile.isLuminanceInverted || false
+                        false // No longer pass isLuminanceInverted - we use inverted master instead
                     );
                     
                     stage1Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
@@ -618,10 +640,11 @@ export default function App() {
                 let simpleMatchResults: ProcessedFile[] = [];
                 for (const targetFile of simpleMatchFiles) {
                     try {
+                        const masterToUse = getMasterForFile(targetFile);
                         let { processedUrl, debugUrl } = await processImageLocally(
-                            masterFile.imageElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
+                            masterToUse, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
                             false, true, targetFile.id === masterFileId, aspectRatio, isAiEdgeFillEnabled,
-                            targetFile.isLuminanceInverted || false
+                            false // No longer pass isLuminanceInverted
                         );
 
                         simpleMatchResults.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
@@ -644,12 +667,33 @@ export default function App() {
                 const masterResult = stage2Results.find(f => f.id === masterFileId);
                 if (masterResult) {
                     const perspectiveMasterElement = await dataUrlToImageElement(masterResult.processedUrl);
+                    // Also create inverted perspective master if needed
+                    let invertedPerspectiveMasterElement: HTMLImageElement | null = null;
+                    if (hasInvertedFiles && invertedMasterElement) {
+                        // Process the inverted master through the same pipeline to get cropped/padded version
+                        try {
+                            const { processedUrl: invertedMasterProcessedUrl } = await processImageLocally(
+                                masterFile.imageElement, invertedMasterElement, isGreedyMode, isRefinementEnabled,
+                                false, false, true, aspectRatio, isAiEdgeFillEnabled, false
+                            );
+                            invertedPerspectiveMasterElement = await dataUrlToImageElement(invertedMasterProcessedUrl);
+                        } catch (err) {
+                            console.warn('Could not create inverted perspective master, using regular inverted master');
+                            invertedPerspectiveMasterElement = invertedMasterElement;
+                        }
+                    }
+                    
                     for (const targetFile of perspectiveFiles) {
                          try {
+                            // Use inverted perspective master for inverted files
+                            const perspectiveMasterToUse = targetFile.isLuminanceInverted && invertedPerspectiveMasterElement
+                                ? invertedPerspectiveMasterElement
+                                : perspectiveMasterElement;
+                            
                             let { processedUrl, debugUrl } = await processImageLocally(
-                                perspectiveMasterElement, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
+                                perspectiveMasterToUse, targetFile.imageElement, isGreedyMode, isRefinementEnabled,
                                 true, false, false, aspectRatio, isAiEdgeFillEnabled,
-                                targetFile.isLuminanceInverted || false
+                                false // No longer pass isLuminanceInverted
                             );
 
                             stage3Results.push({ id: targetFile.id, originalName: targetFile.file.name, processedUrl, debugUrl });
@@ -663,50 +707,83 @@ export default function App() {
                 }
             }
 
-            // Apply Ensemble Correction AFTER all alignments (Standard + Simple + Perspective)
-            // This ensures ALL images get refined with the golden template
+            // ========== SEPARATED ENSEMBLE CORRECTION ==========
+            // Apply Ensemble Correction separately for normal and inverted images
+            // Normal images are refined against normal master
+            // Inverted images are refined against each other (using first inverted as golden template)
             let stage3_5Results = stage3Results;
             if (willRunEnsemble && stage3Results.length > 1) {
                 currentStage++;
-                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying ensemble correction (P+I+E)...`);
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying ensemble correction (separated pipelines)...`);
                 await yieldToMain();
                 
                 const masterResult = stage3Results.find(f => f.id === masterFileId);
                 if (masterResult) {
                     const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
+                    
+                    // Separate results into normal and inverted
+                    const normalResults = stage3Results.filter(f => {
+                        const originalFile = uploadedFiles.find(uf => uf.id === f.id);
+                        return !originalFile?.isLuminanceInverted;
+                    });
+                    const invertedResults = stage3Results.filter(f => {
+                        const originalFile = uploadedFiles.find(uf => uf.id === f.id);
+                        return originalFile?.isLuminanceInverted;
+                    });
+                    
+                    console.log(`Ensemble Correction: ${normalResults.length} normal, ${invertedResults.length} inverted`);
+                    
                     let refinedResults: ProcessedFile[] = [];
-                    for (const file of stage3Results) {
+                    
+                    // 1. Ensemble correction for NORMAL images (against normal master)
+                    for (const file of normalResults) {
                         if (file.id !== masterFileId) {
-                            const originalFile = uploadedFiles.find(f => f.id === file.id);
-                            // SKIP Ensemble Correction for inverted images
-                            // Since processImageLocally now returns the original (non-inverted) image aligned,
-                            // but the master is likely normal, refining them against each other would fail/wobble.
-                            if (originalFile?.isLuminanceInverted) {
-                                console.log(`Skipping ensemble correction for inverted image ${file.originalName}`);
-                                refinedResults.push(file);
-                                continue;
-                            }
-
                             try {
-                                console.log(`Applying ensemble correction to ${file.originalName}...`);
+                                console.log(`Applying ensemble correction (NORMAL) to ${file.originalName}...`);
                                 const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement, isAiEdgeFillEnabled);
                                 refinedResults.push({ ...file, processedUrl: refinedUrl });
                             } catch (err) {
-                                console.error("Error during ensemble refinement:", file.originalName, err);
+                                console.error("Error during ensemble refinement (normal):", file.originalName, err);
                                 refinedResults.push(file);
                             }
                         } else {
                             refinedResults.push(file); // Master stays as-is
                         }
-                        setProcessedFiles([...refinedResults, ...stage3Results.slice(refinedResults.length)]);
+                        setProcessedFiles([...refinedResults]);
                         await yieldToMain();
                     }
+                    
+                    // 2. Ensemble correction for INVERTED images (against each other)
+                    if (invertedResults.length > 0) {
+                        // Use the first inverted image as the golden template for inverted group
+                        const invertedGoldenTemplate = invertedResults[0];
+                        const invertedGoldenElement = await dataUrlToImageElement(invertedGoldenTemplate.processedUrl);
+                        
+                        console.log(`Using ${invertedGoldenTemplate.originalName} as golden template for inverted group`);
+                        
+                        // First inverted image is already the template, add it as-is
+                        refinedResults.push(invertedGoldenTemplate);
+                        
+                        // Refine remaining inverted images against the inverted golden template
+                        for (let i = 1; i < invertedResults.length; i++) {
+                            const file = invertedResults[i];
+                            try {
+                                console.log(`Applying ensemble correction (INVERTED) to ${file.originalName}...`);
+                                const refinedUrl = await refineWithGoldenTemplate(file.processedUrl, invertedGoldenElement, isAiEdgeFillEnabled);
+                                refinedResults.push({ ...file, processedUrl: refinedUrl });
+                            } catch (err) {
+                                console.error("Error during ensemble refinement (inverted):", file.originalName, err);
+                                refinedResults.push(file);
+                            }
+                            setProcessedFiles([...refinedResults]);
+                            await yieldToMain();
+                        }
+                    }
+                    
                     stage3_5Results = refinedResults;
                     setProcessedFiles(stage3_5Results);
                 }
             }
-
-            // Stage 3.6 (Revert Inversion) REMOVED - processImageLocally now handles original image transformation directly
 
             let stage4Results = stage3_5Results;
             if (willRunEdgeFill) {
@@ -811,8 +888,9 @@ export default function App() {
         }, 100);
     }, [
         uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, 
-        isEnsembleCorrectionEnabled, isAiVariationsEnabled, numVariations, 
-        aspectRatio, selectedSnippets, apiKey, contextImageFile
+        isEnsembleCorrectionEnabled, isPerspectiveCorrectionEnabled, isAiEdgeFillEnabled,
+        isAiVariationsEnabled, numVariations, isSimpleMatchEnabled,
+        aspectRatio, selectedSnippets, apiKey, contextImageFile, edgeFillResolution, projectContext
     ]);
     
   // Helper to format time nicely (e.g. "1m 30s" or "45s")

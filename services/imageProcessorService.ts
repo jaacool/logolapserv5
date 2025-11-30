@@ -1450,6 +1450,37 @@ export const invertImage = async (imageUrl: string): Promise<string> => {
     });
 };
 
+// Create an inverted master image (real JPG file) from an HTMLImageElement
+// Returns a new HTMLImageElement with inverted colors
+export const createInvertedMasterImage = async (masterImage: HTMLImageElement): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+        try {
+            const mat = loadImageToMat(masterImage);
+            const inverted = new cv.Mat();
+            cv.bitwise_not(mat, inverted);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = masterImage.naturalWidth;
+            canvas.height = masterImage.naturalHeight;
+            cv.imshow(canvas, inverted);
+            
+            // Create as JPEG for a "real" file
+            const invertedUrl = canvas.toDataURL('image/jpeg', 0.95);
+            
+            mat.delete();
+            inverted.delete();
+            
+            // Create new image element
+            const invertedImage = new Image();
+            invertedImage.onload = () => resolve(invertedImage);
+            invertedImage.onerror = reject;
+            invertedImage.src = invertedUrl;
+        } catch (error) {
+            reject(error);
+        }
+    });
+};
+
 export const refineWithGoldenTemplate = async (
     processedImageUrl: string,
     goldenTemplateElement: HTMLImageElement,
