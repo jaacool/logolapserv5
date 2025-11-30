@@ -1,10 +1,15 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { User } from 'firebase/auth';
 import { FileDropzone } from './components/FileDropzone';
 import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
+import { AuthModal } from './components/AuthModal';
+import { UserMenu } from './components/UserMenu';
 import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
+import { onAuthChange } from './services/authService';
+import { getCredits } from './services/creditService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
 import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon } from './components/Icons';
@@ -89,6 +94,12 @@ export default function App() {
   const [projectContext, setProjectContext] = useState<string>('');
   const [contextImageFile, setContextImageFile] = useState<File | null>(null);
   
+  // Auth state
+  const [user, setUser] = useState<User | null>(null);
+  const [credits, setCredits] = useState<number>(0);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
+  
   const totalEstimatedTimeSecRef = useRef(0);
   
   useEffect(() => {
@@ -121,6 +132,19 @@ export default function App() {
             console.error("Failed to parse stored prompt snippets:", e);
         }
     }
+    
+    // Auth listener
+    const unsubscribe = onAuthChange(async (authUser) => {
+      setUser(authUser);
+      if (authUser) {
+        const userCredits = await getCredits();
+        setCredits(userCredits);
+      } else {
+        setCredits(0);
+      }
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   const handleApiKeyChange = (key: string) => {
@@ -939,10 +963,37 @@ export default function App() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-gray-500 font-medium">v5.2</span>
+            <span className="text-xs text-gray-500 font-medium">v5.3</span>
+            
+            {/* Auth Buttons */}
+            {user ? (
+              <UserMenu user={user} credits={credits} />
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setAuthModalMode('login'); setAuthModalOpen(true); }}
+                  className="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                >
+                  Log In
+                </button>
+                <button
+                  onClick={() => { setAuthModalMode('signup'); setAuthModalOpen(true); }}
+                  className="px-4 py-2 text-sm font-medium bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-500 hover:to-blue-500 transition-all"
+                >
+                  Sign Up
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
+      
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={authModalOpen} 
+        onClose={() => setAuthModalOpen(false)} 
+        initialMode={authModalMode}
+      />
 
       <main className="w-full max-w-[1800px] mx-auto flex-grow flex flex-col items-center justify-center h-full">
         {error && (
