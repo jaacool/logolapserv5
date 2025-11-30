@@ -12,6 +12,7 @@ import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { onAuthChange } from './services/authService';
 import { getCredits, deductCredits, hasEnoughCredits } from './services/creditService';
+import { capturePayPalOrder } from './services/paymentService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
 import { calculateCreditsNeeded } from './types/credits';
@@ -151,6 +152,47 @@ export default function App() {
         setCredits(0);
       }
     });
+    
+    // Check for payment success/cancel from URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentStatus = urlParams.get('payment');
+    const paypalToken = urlParams.get('token'); // PayPal order ID
+    
+    if (paypalToken && paymentStatus === 'success') {
+      // PayPal payment - need to capture the order
+      (async () => {
+        try {
+          const result = await capturePayPalOrder(paypalToken);
+          if ('error' in result) {
+            alert('Payment failed: ' + result.error);
+          } else {
+            // Wait a moment for the database to update
+            setTimeout(async () => {
+              const userCredits = await getCredits();
+              setCredits(userCredits);
+              alert('🎉 PayPal payment successful! Your credits have been added.');
+            }, 1000);
+          }
+        } catch (err) {
+          console.error('PayPal capture error:', err);
+          alert('Failed to complete PayPal payment. Please contact support.');
+        }
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname);
+      })();
+    } else if (paymentStatus === 'success') {
+      // Stripe payment - webhook handles credits
+      setTimeout(async () => {
+        const userCredits = await getCredits();
+        setCredits(userCredits);
+        alert('🎉 Payment successful! Your credits have been added.');
+      }, 2000);
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (paymentStatus === 'cancelled') {
+      alert('Payment was cancelled.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     
     return () => unsubscribe();
   }, []);
@@ -1050,11 +1092,9 @@ export default function App() {
         isOpen={creditShopOpen}
         onClose={() => setCreditShopOpen(false)}
         onPurchase={(packageId) => {
-          // TODO: Implement Stripe/PayPal payment
           console.log('Purchase package:', packageId);
-          alert('Payment integration coming soon! For now, contact support for credits.');
-          setCreditShopOpen(false);
         }}
+        userId={user?.uid}
       />
       
       {/* Insufficient Credits Modal */}

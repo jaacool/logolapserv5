@@ -22,6 +22,14 @@ export interface CreditPackage {
 
 export const CREDIT_PACKAGES: CreditPackage[] = [
   {
+    id: 'test',
+    name: '🧪 Test',
+    credits: 1,
+    price: 0.50,
+    pricePerCredit: 0.50,
+    logosIncluded: 0,
+  },
+  {
     id: 'starter',
     name: 'Starter',
     credits: 30,

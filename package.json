@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@google/genai": "^1.28.0",
+    "@stripe/stripe-js": "^8.5.3",
+    "@supabase/supabase-js": "^2.86.0",
     "firebase": "^12.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
