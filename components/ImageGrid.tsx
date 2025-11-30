@@ -60,28 +60,31 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
             >
               <img src={file.previewUrl} alt={file.file.name} className="w-full h-full object-contain bg-gray-800" />
               
+              {/* Delete button - ABOVE overlay */}
               <button
                 onClick={(e) => handleDeleteClick(e, file.id)}
-                className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all duration-200 z-10"
+                className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all duration-200 z-20"
                 title="Delete Image"
               >
                   <XIcon className="w-4 h-4" />
               </button>
 
+              {/* Hover overlay for filename - BELOW buttons */}
+              <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-0">
+                <p className="text-white text-xs text-center p-1 truncate">{file.file.name}</p>
+              </div>
+
+              {/* Invert button - ABOVE overlay */}
               {!isMaster && (
                 <button
                   onClick={(e) => handleInversionClick(e, file.id)}
-                  className={`absolute top-1 left-1 p-1.5 rounded-full transition-colors duration-200
+                  className={`absolute top-1 left-1 p-1.5 rounded-full transition-colors duration-200 z-20
                     ${isInverted ? 'bg-purple-500/90 text-white' : 'bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-purple-500/70 hover:text-white'}`}
                   title={isInverted ? "Inverted (Click to disable)" : "Normal (Click to invert)"}
                 >
                   <InvertIcon className="w-4 h-4" />
                 </button>
               )}
-
-              <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <p className="text-white text-xs text-center p-1 truncate">{file.file.name}</p>
-              </div>
 
               {isMaster && (
                 <>
@@ -92,10 +95,11 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
                 </>
               )}
 
+              {/* Simple Match button - ABOVE overlay */}
               {!isMaster && (
                 <button
                   onClick={(e) => handleSimpleMatchClick(e, file.id)}
-                  className={`absolute bottom-1 right-1 p-1.5 rounded-full transition-colors duration-200
+                  className={`absolute bottom-1 right-1 p-1.5 rounded-full transition-colors duration-200 z-20
                     ${needsSimpleMatch ? 'bg-green-500 text-white' : 'bg-black/50 text-gray-300 hover:bg-gray-700 hover:text-white'}`}
                   title={needsSimpleMatch ? "Simple Match Active (Click for Perspective)" : "Perspective Active (Click for Simple Match)"}
                 >

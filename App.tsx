@@ -556,14 +556,15 @@ export default function App() {
             
             console.log(`DUAL PIPELINE: ${normalFiles.length} normal files, ${invertedFiles.length} inverted files`);
             
-            // Create inverted master if we have inverted files
+            // Create inverted master from ORIGINAL master image
+            // This will be used for standard/simple match alignment of inverted files
             let invertedMasterElement: HTMLImageElement | null = null;
             if (invertedFiles.length > 0) {
                 setProcessingStatus('Creating inverted master image...');
                 await yieldToMain();
                 try {
                     invertedMasterElement = await createInvertedMasterImage(masterFile.imageElement);
-                    console.log('✅ Inverted master image created successfully');
+                    console.log('✅ Inverted master image created successfully (from original master)');
                 } catch (err) {
                     console.error('Failed to create inverted master:', err);
                     setError('Failed to create inverted master image');
@@ -604,8 +605,10 @@ export default function App() {
             // Helper to get the correct master for a file
             const getMasterForFile = (file: UploadedFile): HTMLImageElement => {
                 if (file.isLuminanceInverted && invertedMasterElement) {
+                    console.log(`📸 Using INVERTED master for: ${file.file.name}`);
                     return invertedMasterElement;
                 }
+                console.log(`📸 Using NORMAL master for: ${file.file.name}`);
                 return masterFile.imageElement;
             };
 
@@ -667,19 +670,17 @@ export default function App() {
                 const masterResult = stage2Results.find(f => f.id === masterFileId);
                 if (masterResult) {
                     const perspectiveMasterElement = await dataUrlToImageElement(masterResult.processedUrl);
-                    // Also create inverted perspective master if needed
+                    
+                    // Create inverted perspective master by inverting the already-processed master
+                    // This ensures same crop/pad as normal master
                     let invertedPerspectiveMasterElement: HTMLImageElement | null = null;
-                    if (hasInvertedFiles && invertedMasterElement) {
-                        // Process the inverted master through the same pipeline to get cropped/padded version
+                    if (hasInvertedFiles) {
                         try {
-                            const { processedUrl: invertedMasterProcessedUrl } = await processImageLocally(
-                                masterFile.imageElement, invertedMasterElement, isGreedyMode, isRefinementEnabled,
-                                false, false, true, aspectRatio, isAiEdgeFillEnabled, false
-                            );
-                            invertedPerspectiveMasterElement = await dataUrlToImageElement(invertedMasterProcessedUrl);
+                            const invertedMasterUrl = await invertImage(masterResult.processedUrl);
+                            invertedPerspectiveMasterElement = await dataUrlToImageElement(invertedMasterUrl);
+                            console.log('✅ Inverted perspective master created from processed master');
                         } catch (err) {
-                            console.warn('Could not create inverted perspective master, using regular inverted master');
-                            invertedPerspectiveMasterElement = invertedMasterElement;
+                            console.warn('Could not create inverted perspective master:', err);
                         }
                     }
                     
@@ -689,6 +690,8 @@ export default function App() {
                             const perspectiveMasterToUse = targetFile.isLuminanceInverted && invertedPerspectiveMasterElement
                                 ? invertedPerspectiveMasterElement
                                 : perspectiveMasterElement;
+                            
+                            console.log(`📸 Perspective: Using ${targetFile.isLuminanceInverted ? 'INVERTED' : 'NORMAL'} master for: ${targetFile.file.name}`);
                             
                             let { processedUrl, debugUrl } = await processImageLocally(
                                 perspectiveMasterToUse, targetFile.imageElement, isGreedyMode, isRefinementEnabled,

@@ -1422,15 +1422,37 @@ export const processImageLocally = (
 };
 
 
-// Invert an image (from data URL) - simple bitwise_not on all channels
+// Invert an image (from data URL) - inverts only RGB channels, preserves alpha
 export const invertImage = async (imageUrl: string): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
+            const mats: any[] = [];
             try {
-                const mat = loadImageToMat(img);
-                const inverted = new cv.Mat();
-                cv.bitwise_not(mat, inverted);
+                const mat = loadImageToMat(img); mats.push(mat);
+                
+                // Split into channels (RGBA)
+                const channels = new cv.MatVector(); mats.push(channels);
+                cv.split(mat, channels);
+                
+                // Invert only R, G, B channels (not Alpha)
+                const rInv = new cv.Mat(); mats.push(rInv);
+                const gInv = new cv.Mat(); mats.push(gInv);
+                const bInv = new cv.Mat(); mats.push(bInv);
+                
+                cv.bitwise_not(channels.get(0), rInv);
+                cv.bitwise_not(channels.get(1), gInv);
+                cv.bitwise_not(channels.get(2), bInv);
+                
+                // Merge back with original alpha
+                const invertedChannels = new cv.MatVector(); mats.push(invertedChannels);
+                invertedChannels.push_back(rInv);
+                invertedChannels.push_back(gInv);
+                invertedChannels.push_back(bInv);
+                invertedChannels.push_back(channels.get(3)); // Keep original alpha
+                
+                const inverted = new cv.Mat(); mats.push(inverted);
+                cv.merge(invertedChannels, inverted);
                 
                 const canvas = document.createElement('canvas');
                 canvas.width = img.naturalWidth;
@@ -1438,11 +1460,11 @@ export const invertImage = async (imageUrl: string): Promise<string> => {
                 cv.imshow(canvas, inverted);
                 const invertedUrl = canvas.toDataURL('image/png');
                 
-                mat.delete();
-                inverted.delete();
                 resolve(invertedUrl);
             } catch (error) {
                 reject(error);
+            } finally {
+                mats.forEach(m => { if (m && m.delete && !m.isDeleted()) m.delete(); });
             }
         };
         img.onerror = reject;
@@ -1451,13 +1473,36 @@ export const invertImage = async (imageUrl: string): Promise<string> => {
 };
 
 // Create an inverted master image (real JPG file) from an HTMLImageElement
+// Inverts only RGB channels, preserving structure for feature detection
 // Returns a new HTMLImageElement with inverted colors
 export const createInvertedMasterImage = async (masterImage: HTMLImageElement): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
+        const mats: any[] = [];
         try {
-            const mat = loadImageToMat(masterImage);
-            const inverted = new cv.Mat();
-            cv.bitwise_not(mat, inverted);
+            const mat = loadImageToMat(masterImage); mats.push(mat);
+            
+            // Split into channels (RGBA)
+            const channels = new cv.MatVector(); mats.push(channels);
+            cv.split(mat, channels);
+            
+            // Invert only R, G, B channels (not Alpha)
+            const rInv = new cv.Mat(); mats.push(rInv);
+            const gInv = new cv.Mat(); mats.push(gInv);
+            const bInv = new cv.Mat(); mats.push(bInv);
+            
+            cv.bitwise_not(channels.get(0), rInv);
+            cv.bitwise_not(channels.get(1), gInv);
+            cv.bitwise_not(channels.get(2), bInv);
+            
+            // Merge back with original alpha
+            const invertedChannels = new cv.MatVector(); mats.push(invertedChannels);
+            invertedChannels.push_back(rInv);
+            invertedChannels.push_back(gInv);
+            invertedChannels.push_back(bInv);
+            invertedChannels.push_back(channels.get(3)); // Keep original alpha
+            
+            const inverted = new cv.Mat(); mats.push(inverted);
+            cv.merge(invertedChannels, inverted);
             
             const canvas = document.createElement('canvas');
             canvas.width = masterImage.naturalWidth;
@@ -1467,16 +1512,18 @@ export const createInvertedMasterImage = async (masterImage: HTMLImageElement): 
             // Create as JPEG for a "real" file
             const invertedUrl = canvas.toDataURL('image/jpeg', 0.95);
             
-            mat.delete();
-            inverted.delete();
-            
             // Create new image element
             const invertedImage = new Image();
-            invertedImage.onload = () => resolve(invertedImage);
+            invertedImage.onload = () => {
+                console.log(`✅ Inverted master created: ${invertedImage.naturalWidth}x${invertedImage.naturalHeight}`);
+                resolve(invertedImage);
+            };
             invertedImage.onerror = reject;
             invertedImage.src = invertedUrl;
         } catch (error) {
             reject(error);
+        } finally {
+            mats.forEach(m => { if (m && m.delete && !m.isDeleted()) m.delete(); });
         }
     });
 };
