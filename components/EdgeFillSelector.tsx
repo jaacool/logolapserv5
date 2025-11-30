@@ -10,7 +10,17 @@ interface EdgeFillSelectorProps {
 }
 
 export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onChange, resolution, onResolutionChange, imageCount }) => {
-  const estimatedTime = imageCount * 17;
+  const estimatedTimeSec = imageCount * 17;
+  
+  // Format time as "Xm Ys" or just "Xs" if under 60s
+  const formatTime = (totalSeconds: number) => {
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  };
+  
+  const estimatedTimeFormatted = formatTime(estimatedTimeSec);
 
   return (
     <div className="flex flex-col gap-3">
@@ -47,7 +57,7 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
           <span className="text-xs opacity-70 mt-1">AI Inpainting</span>
           {value === 'pro' && (
             <div className="absolute -top-2 -right-2 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              +{estimatedTime}s
+              +{estimatedTimeFormatted}
             </div>
           )}
         </button>
@@ -76,7 +86,7 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
           </div>
 
           <div className="text-xs text-purple-300/70 border-t border-purple-500/10 pt-2">
-            <p><strong>Pro Mode:</strong> Uses Nanobanana AI to realistically fill edges. Adds ~{estimatedTime}s processing time.</p>
+            <p><strong>Pro Mode:</strong> Uses Nanobanana AI to realistically fill edges. Adds ~{estimatedTimeFormatted} processing time.</p>
           </div>
         </div>
       )}

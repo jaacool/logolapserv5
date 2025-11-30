@@ -2,8 +2,7 @@ import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../config/firebase';
 import { getCurrentUser } from './authService';
 import { isAdmin, ADMIN_CREDITS } from '../config/admin';
-
-const WELCOME_BONUS_CREDITS = 15;
+import { WELCOME_BONUS_CREDITS } from '../types/credits';
 
 interface UserCredits {
   credits: number;

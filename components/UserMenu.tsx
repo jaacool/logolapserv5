@@ -6,9 +6,10 @@ import { isAdmin } from '../config/admin';
 interface UserMenuProps {
   user: User;
   credits: number;
+  onBuyCredits?: () => void;
 }
 
-export const UserMenu: React.FC<UserMenuProps> = ({ user, credits }) => {
+export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -99,7 +100,15 @@ export const UserMenu: React.FC<UserMenuProps> = ({ user, credits }) => {
           </div>
 
           {/* Menu Items */}
-          <div className="p-2">
+          <div className="p-2 space-y-1">
+            {onBuyCredits && !userIsAdmin && (
+              <button
+                onClick={() => { setIsOpen(false); onBuyCredits(); }}
+                className="w-full text-left px-4 py-2 text-yellow-400 hover:bg-yellow-500/20 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <span>⚡</span> Buy Credits
+              </button>
+            )}
             <button
               onClick={handleSignOut}
               className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"

@@ -5,13 +5,16 @@ import { ImageGrid } from './components/ImageGrid';
 import { Previewer } from './components/Previewer';
 import { AuthModal } from './components/AuthModal';
 import { UserMenu } from './components/UserMenu';
+import { CreditShop } from './components/CreditShop';
+import { InsufficientCreditsModal } from './components/InsufficientCreditsModal';
 import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { onAuthChange } from './services/authService';
-import { getCredits } from './services/creditService';
+import { getCredits, deductCredits, hasEnoughCredits } from './services/creditService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
+import { calculateCreditsNeeded } from './types/credits';
 import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon } from './components/Icons';
 import { Spinner } from './components/Spinner';
 import { DebugToggle } from './components/DebugToggle';
@@ -99,6 +102,11 @@ export default function App() {
   const [credits, setCredits] = useState<number>(0);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
+  const [creditShopOpen, setCreditShopOpen] = useState(false);
+  const [insufficientCreditsModal, setInsufficientCreditsModal] = useState<{
+    isOpen: boolean;
+    creditsNeeded: number;
+  }>({ isOpen: false, creditsNeeded: 0 });
   
   const totalEstimatedTimeSecRef = useRef(0);
   
@@ -521,6 +529,25 @@ export default function App() {
             return;
         }
 
+        // Calculate credits needed for this batch
+        const imageCount = uploadedFiles.filter(f => f.id !== masterFileId).length;
+        const edgeFillMode: 'none' | 'standard' | 'premium' | 'ultra' = !isAiEdgeFillEnabled 
+          ? 'none' 
+          : edgeFillResolution >= 4096 ? 'ultra' 
+          : edgeFillResolution > 1024 ? 'premium' 
+          : 'standard';
+        const aiVariationCount = isAiVariationsEnabled ? numVariations : 0;
+        const creditsNeeded = calculateCreditsNeeded(imageCount, edgeFillMode, aiVariationCount);
+        
+        // Check if user is logged in and has enough credits
+        if (user) {
+            const hasCredits = await hasEnoughCredits(creditsNeeded);
+            if (!hasCredits) {
+                setInsufficientCreditsModal({ isOpen: true, creditsNeeded });
+                return;
+            }
+        }
+
         setIsProcessing(true);
         setError(null);
         setProcessedFiles([]);
@@ -908,6 +935,17 @@ export default function App() {
             clearInterval(progressTimer);
             setProcessingProgress(100);
             
+            // Deduct credits after successful processing
+            if (user && creditsNeeded > 0) {
+                const deducted = await deductCredits(creditsNeeded);
+                if (deducted) {
+                    console.log(`✅ Deducted ${creditsNeeded} credits`);
+                    // Refresh credits display
+                    const newCredits = await getCredits();
+                    setCredits(newCredits);
+                }
+            }
+            
             setProcessedFiles(finalResults);
             setProcessingStatus('Processing complete!');
             setIsProcessing(false);
@@ -917,7 +955,7 @@ export default function App() {
         uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, 
         isEnsembleCorrectionEnabled, isPerspectiveCorrectionEnabled, isAiEdgeFillEnabled,
         isAiVariationsEnabled, numVariations, isSimpleMatchEnabled,
-        aspectRatio, selectedSnippets, apiKey, contextImageFile, edgeFillResolution, projectContext
+        aspectRatio, selectedSnippets, apiKey, contextImageFile, edgeFillResolution, projectContext, user
     ]);
     
   // Helper to format time nicely (e.g. "1m 30s" or "45s")
@@ -949,6 +987,18 @@ export default function App() {
       return Math.ceil(total);
   }, [uploadedFiles.length, isAiEdgeFillEnabled, isAiVariationsEnabled, numVariations]);
 
+  // Calculate credits needed for display
+  const estimatedCreditsNeeded = useMemo(() => {
+      const imageCount = uploadedFiles.filter(f => f.id !== masterFileId).length;
+      const edgeFillMode: 'none' | 'standard' | 'premium' | 'ultra' = !isAiEdgeFillEnabled 
+        ? 'none' 
+        : edgeFillResolution >= 4096 ? 'ultra' 
+        : edgeFillResolution > 1024 ? 'premium' 
+        : 'standard';
+      const aiVariationCount = isAiVariationsEnabled ? numVariations : 0;
+      return calculateCreditsNeeded(imageCount, edgeFillMode, aiVariationCount);
+  }, [uploadedFiles, masterFileId, isAiEdgeFillEnabled, edgeFillResolution, isAiVariationsEnabled, numVariations]);
+
   const formattedEstimatedTime = formatTime(totalEstimatedTime);
 
   return (
@@ -967,7 +1017,7 @@ export default function App() {
             
             {/* Auth Buttons */}
             {user ? (
-              <UserMenu user={user} credits={credits} />
+              <UserMenu user={user} credits={credits} onBuyCredits={() => setCreditShopOpen(true)} />
             ) : (
               <div className="flex items-center gap-2">
                 <button
@@ -993,6 +1043,30 @@ export default function App() {
         isOpen={authModalOpen} 
         onClose={() => setAuthModalOpen(false)} 
         initialMode={authModalMode}
+      />
+      
+      {/* Credit Shop Modal */}
+      <CreditShop
+        isOpen={creditShopOpen}
+        onClose={() => setCreditShopOpen(false)}
+        onPurchase={(packageId) => {
+          // TODO: Implement Stripe/PayPal payment
+          console.log('Purchase package:', packageId);
+          alert('Payment integration coming soon! For now, contact support for credits.');
+          setCreditShopOpen(false);
+        }}
+      />
+      
+      {/* Insufficient Credits Modal */}
+      <InsufficientCreditsModal
+        isOpen={insufficientCreditsModal.isOpen}
+        onClose={() => setInsufficientCreditsModal({ isOpen: false, creditsNeeded: 0 })}
+        onBuyCredits={() => {
+          setInsufficientCreditsModal({ isOpen: false, creditsNeeded: 0 });
+          setCreditShopOpen(true);
+        }}
+        creditsNeeded={insufficientCreditsModal.creditsNeeded}
+        creditsAvailable={credits}
       />
 
       <main className="w-full max-w-[1800px] mx-auto flex-grow flex flex-col items-center justify-center h-full">
@@ -1127,6 +1201,9 @@ export default function App() {
                               Align & Generate
                               <span className="block text-xs font-normal opacity-80 mt-1">
                                  Est. time: ~{formattedEstimatedTime}
+                                 {user && estimatedCreditsNeeded > 0 && (
+                                   <span className="ml-2 text-yellow-300">• ⚡{estimatedCreditsNeeded} credits</span>
+                                 )}
                               </span>
                            </button>
                         )}
