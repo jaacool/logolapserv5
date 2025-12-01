@@ -25,8 +25,8 @@ export const processWithNanobanana = async (
     const resizedImageUrl = await resizeImage(imageUrl, resolution, resolution);
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
 
-    // Prompt designed to encourage outpainting/filling of black borders
-    const prompt = "Refill any cropped out or cut off areas, especially black areas. Seamlessly extend the background texture and lighting into these black regions to complete the scene. Maintain the original central content exactly as is. Do not distort the logo or central object.";
+    // Prompt designed to encourage outpainting/filling of black borders while preserving logo exactly
+    const prompt = "CRITICAL: Do NOT modify, resize, rotate, or reposition the logo/central object in ANY way. Keep the logo EXACTLY as it is - same size, same position, same rotation, same proportions. ONLY fill the black/empty border areas around the edges. Seamlessly extend the background texture and lighting into these black regions. The central content must remain pixel-perfect unchanged.";
 
     try {
         const response = await ai.models.generateContent({

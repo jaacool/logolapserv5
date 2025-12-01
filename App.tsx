@@ -584,7 +584,7 @@ export default function App() {
 
         // Estimate total time for the whole pipeline (local + optional AI)
         const REAL_TIME_PER_LOCAL_ALIGNMENT = 1.2; // seconds per local image
-        const REAL_TIME_PER_AI_FILL = 18.0; // Estimate for Nanobanana
+        const REAL_TIME_PER_AI_FILL = 9.0; // Parallel processing - halved from 18s
         const REAL_TIME_PER_AI_GENERATION = 17.0;   // seconds per AI variation
 
         let totalEstimatedTimeSec = uploadedFiles.length * REAL_TIME_PER_LOCAL_ALIGNMENT;
@@ -1011,7 +1011,7 @@ export default function App() {
       if (!uploadedFiles.length) return 0;
       
       const REAL_TIME_PER_LOCAL_ALIGNMENT = 1.2;
-      const REAL_TIME_PER_AI_FILL = 18.0; 
+      const REAL_TIME_PER_AI_FILL = 9.0; // Parallel processing - halved
       const REAL_TIME_PER_AI_GENERATION = 17.0;
 
       let total = uploadedFiles.length * REAL_TIME_PER_LOCAL_ALIGNMENT;
