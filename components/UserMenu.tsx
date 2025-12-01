@@ -7,9 +7,10 @@ interface UserMenuProps {
   user: User;
   credits: number;
   onBuyCredits?: () => void;
+  onShowInvoices?: () => void;
 }
 
-export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits }) => {
+export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits, onShowInvoices }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -107,6 +108,17 @@ export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits 
                 className="w-full text-left px-4 py-2 text-yellow-400 hover:bg-yellow-500/20 rounded-lg transition-colors flex items-center gap-2"
               >
                 <span>⚡</span> Buy Credits
+              </button>
+            )}
+            {onShowInvoices && (
+              <button
+                onClick={() => { setIsOpen(false); onShowInvoices(); }}
+                className="w-full text-left px-4 py-2 text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Meine Rechnungen
               </button>
             )}
             <button

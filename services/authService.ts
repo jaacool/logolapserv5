@@ -32,10 +32,12 @@ export const signInWithEmail = async (email: string, password: string): Promise<
   }
   
   try {
+    console.log('🔐 Attempting email sign-in for:', email);
     const result = await signInWithEmailAndPassword(auth, email, password);
+    console.log('✅ Email sign-in successful');
     return result.user;
-  } catch (error) {
-    console.error('Error signing in with email:', error);
+  } catch (error: any) {
+    console.error('❌ Error signing in with email:', error.code, error.message);
     throw error;
   }
 };
@@ -47,10 +49,12 @@ export const signUpWithEmail = async (email: string, password: string): Promise<
   }
   
   try {
+    console.log('📝 Attempting email sign-up for:', email);
     const result = await createUserWithEmailAndPassword(auth, email, password);
+    console.log('✅ Email sign-up successful');
     return result.user;
-  } catch (error) {
-    console.error('Error signing up with email:', error);
+  } catch (error: any) {
+    console.error('❌ Error signing up with email:', error.code, error.message);
     throw error;
   }
 };
@@ -109,7 +113,7 @@ export const getAuthErrorMessage = (errorCode: string): string => {
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/operation-not-allowed':
-      return 'This sign-in method is not enabled.';
+      return 'Email/Password sign-in is not enabled. Please enable it in Firebase Console under Authentication > Sign-in method.';
     case 'auth/weak-password':
       return 'Password should be at least 6 characters.';
     case 'auth/user-disabled':

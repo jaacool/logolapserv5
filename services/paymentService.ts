@@ -44,7 +44,7 @@ export const createStripeCheckout = async (
       body: {
         packageId,
         userId,
-        priceInCents: Math.round(pkg.price * 100),
+        priceInCents: Math.round(pkg.priceGross * 100),
         credits: pkg.credits,
         packageName: pkg.name,
       },
@@ -83,7 +83,7 @@ export const createPayPalOrder = async (
       body: {
         packageId,
         userId,
-        amount: pkg.price.toFixed(2),
+        amount: pkg.priceGross.toFixed(2),
         credits: pkg.credits,
         packageName: pkg.name,
       },

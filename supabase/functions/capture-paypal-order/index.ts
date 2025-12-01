@@ -12,6 +12,14 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 );
 
+// Credit packages with prices
+const CREDIT_PACKAGES: Record<string, { name: string; credits: number; priceCents: number }> = {
+  'starter': { name: 'Starter Pack', credits: 50, priceCents: 499 },
+  'basic': { name: 'Basic Pack', credits: 150, priceCents: 999 },
+  'pro': { name: 'Pro Pack', credits: 500, priceCents: 2499 },
+  'enterprise': { name: 'Enterprise Pack', credits: 2000, priceCents: 7999 },
+};
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -119,6 +127,59 @@ serve(async (req) => {
       }
 
       console.log(`Added ${credits} credits to user ${finalUserId}. New balance: ${data}`);
+
+      // Create invoice for this purchase
+      try {
+        const pkg = CREDIT_PACKAGES[orderData.packageId] || { 
+          name: 'Credit Package', 
+          credits, 
+          priceCents: 0 
+        };
+
+        // Get amount from PayPal capture data
+        const capturedAmount = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.amount;
+        const totalCents = capturedAmount 
+          ? Math.round(parseFloat(capturedAmount.value) * 100)
+          : pkg.priceCents;
+
+        const lineItems = [{
+          description: `${pkg.name} - ${credits} Credits`,
+          quantity: 1,
+          unit_price_cents: totalCents,
+          total_cents: totalCents,
+        }];
+
+        // Calculate net amount (price includes 19% VAT)
+        const subtotalCents = Math.round(totalCents / 1.19);
+
+        // Get payer email from PayPal
+        const payerEmail = captureData.payer?.email_address || 'unknown@email.com';
+        const payerName = captureData.payer?.name 
+          ? `${captureData.payer.name.given_name || ''} ${captureData.payer.name.surname || ''}`.trim()
+          : null;
+
+        const { data: invoiceResult, error: invoiceError } = await supabase.rpc('create_invoice', {
+          p_user_id: finalUserId,
+          p_customer_email: payerEmail,
+          p_customer_name: payerName,
+          p_line_items: JSON.stringify(lineItems),
+          p_subtotal_cents: subtotalCents,
+          p_tax_rate: 19.00,
+          p_payment_provider: 'paypal',
+          p_payment_id: orderId,
+          p_transaction_id: null,
+          p_prefix: 'LL',
+        });
+
+        if (invoiceError) {
+          console.error('Error creating invoice:', invoiceError);
+        } else {
+          console.log('Invoice created:', invoiceResult?.[0]?.invoice_number);
+        }
+      } catch (invoiceErr) {
+        console.error('Invoice creation error:', invoiceErr);
+        // Don't fail the payment if invoice creation fails
+      }
 
       return new Response(
         JSON.stringify({ success: true, credits, newBalance: data }),

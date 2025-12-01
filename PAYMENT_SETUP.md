@@ -102,3 +102,60 @@ Use PayPal sandbox accounts from the Developer Dashboard.
 | Standard | 100 | €7.99 | €0.08 |
 | Pro | 300 | €19.99 | €0.067 |
 | Premium | 1000 | €49.99 | €0.05 |
+
+## 7. Invoice System (Rechnungen)
+
+### Database Setup
+Run the second migration for invoices:
+```sql
+-- Copy contents from: supabase/migrations/002_create_invoice_tables.sql
+```
+
+This creates:
+- `invoices` table (stores all invoices)
+- `invoice_sequences` table (manages invoice number sequences per prefix)
+- `company_settings` table (your company info for invoice header)
+- `get_next_invoice_number()` function (atomic invoice number generation)
+- `create_invoice()` function (creates invoice with all data)
+
+### Update Company Settings
+After running the migration, update your company info:
+```sql
+UPDATE company_settings SET
+  company_name = 'Your Company GmbH',
+  company_address = 'Musterstraße 123
+12345 Musterstadt
+Deutschland',
+  company_email = 'billing@yourcompany.com',
+  tax_id = '123/456/78901',
+  vat_id = 'DE123456789',
+  bank_name = 'Your Bank',
+  bank_iban = 'DE89 3704 0044 0532 0130 00',
+  bank_bic = 'COBADEFFXXX',
+  invoice_footer = 'Vielen Dank für Ihren Einkauf!'
+WHERE id = (SELECT id FROM company_settings LIMIT 1);
+```
+
+### Deploy Invoice Functions
+```bash
+supabase functions deploy create-invoice
+supabase functions deploy generate-invoice-pdf
+```
+
+### Features
+- **Automatic Invoice Creation**: Invoices are created automatically after successful Stripe/PayPal payment
+- **Separate Number Ranges**: Uses prefix "LL" for LogoLapser (e.g., LL-2024-0001)
+- **PDF Download**: Users can download invoices as PDF from "Meine Rechnungen" in the user menu
+- **DATEV Export**: Admins can export all invoices as DATEV-compatible CSV for accounting
+
+### Invoice Number Format
+`LL-YYYY-NNNN`
+- `LL` = Prefix (configurable per business area)
+- `YYYY` = Year
+- `NNNN` = Sequential number (resets each year)
+
+### Legal Compliance (Germany)
+- Separate number ranges per business area are allowed
+- Each range must be sequential and gap-free
+- 10-year retention requirement (stored in Supabase)
+- All required invoice fields included (§14 UStG)

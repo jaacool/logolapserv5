@@ -7,6 +7,7 @@ import { AuthModal } from './components/AuthModal';
 import { UserMenu } from './components/UserMenu';
 import { CreditShop } from './components/CreditShop';
 import { InsufficientCreditsModal } from './components/InsufficientCreditsModal';
+import { InvoiceModal } from './components/InvoiceModal';
 import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
@@ -104,6 +105,7 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [creditShopOpen, setCreditShopOpen] = useState(false);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [insufficientCreditsModal, setInsufficientCreditsModal] = useState<{
     isOpen: boolean;
     creditsNeeded: number;
@@ -1059,7 +1061,12 @@ export default function App() {
             
             {/* Auth Buttons */}
             {user ? (
-              <UserMenu user={user} credits={credits} onBuyCredits={() => setCreditShopOpen(true)} />
+              <UserMenu 
+                user={user} 
+                credits={credits} 
+                onBuyCredits={() => setCreditShopOpen(true)} 
+                onShowInvoices={() => setInvoiceModalOpen(true)}
+              />
             ) : (
               <div className="flex items-center gap-2">
                 <button
@@ -1108,6 +1115,16 @@ export default function App() {
         creditsNeeded={insufficientCreditsModal.creditsNeeded}
         creditsAvailable={credits}
       />
+      
+      {/* Invoice Modal */}
+      {user && (
+        <InvoiceModal
+          isOpen={invoiceModalOpen}
+          onClose={() => setInvoiceModalOpen(false)}
+          userId={user.uid}
+          userEmail={user.email}
+        />
+      )}
 
       <main className="w-full max-w-[1800px] mx-auto flex-grow flex flex-col items-center justify-center h-full">
         {error && (

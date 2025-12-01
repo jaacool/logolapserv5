@@ -2,12 +2,20 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 import { crypto } from 'https://deno.land/std@0.168.0/crypto/mod.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL') || '',
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-);
+const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const endpointSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') || '';
+
+// Credit packages with prices
+const CREDIT_PACKAGES: Record<string, { name: string; credits: number; priceCents: number }> = {
+  'starter': { name: 'Starter Pack', credits: 50, priceCents: 499 },
+  'basic': { name: 'Basic Pack', credits: 150, priceCents: 999 },
+  'pro': { name: 'Pro Pack', credits: 500, priceCents: 2499 },
+  'enterprise': { name: 'Enterprise Pack', credits: 2000, priceCents: 7999 },
+};
 
 // Manual signature verification to avoid Stripe SDK issues
 async function verifyStripeSignature(payload: string, signature: string, secret: string): Promise<boolean> {
@@ -108,6 +116,48 @@ serve(async (req) => {
         }
 
         console.log(`Added ${credits} credits to user ${userId}. New balance: ${data}`);
+
+        // Create invoice for this purchase
+        try {
+          const pkg = CREDIT_PACKAGES[packageId] || { 
+            name: 'Credit Package', 
+            credits, 
+            priceCents: session.amount_total || 0 
+          };
+
+          const lineItems = [{
+            description: `${pkg.name} - ${credits} Credits`,
+            quantity: 1,
+            unit_price_cents: session.amount_total || pkg.priceCents,
+            total_cents: session.amount_total || pkg.priceCents,
+          }];
+
+          // Calculate net amount (price includes 19% VAT)
+          const totalCents = session.amount_total || pkg.priceCents;
+          const subtotalCents = Math.round(totalCents / 1.19);
+
+          const { data: invoiceResult, error: invoiceError } = await supabase.rpc('create_invoice', {
+            p_user_id: userId,
+            p_customer_email: session.customer_email || session.customer_details?.email || 'unknown@email.com',
+            p_customer_name: session.customer_details?.name || null,
+            p_line_items: JSON.stringify(lineItems),
+            p_subtotal_cents: subtotalCents,
+            p_tax_rate: 19.00,
+            p_payment_provider: 'stripe',
+            p_payment_id: session.id,
+            p_transaction_id: null,
+            p_prefix: 'LL',
+          });
+
+          if (invoiceError) {
+            console.error('Error creating invoice:', invoiceError);
+          } else {
+            console.log('Invoice created:', invoiceResult?.[0]?.invoice_number);
+          }
+        } catch (invoiceErr) {
+          console.error('Invoice creation error:', invoiceErr);
+          // Don't fail the webhook if invoice creation fails
+        }
       } catch (err) {
         console.error('Database error:', err);
         return new Response(JSON.stringify({ error: 'Database error' }), { status: 500 });

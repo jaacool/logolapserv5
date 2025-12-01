@@ -14,7 +14,7 @@ interface CreditShopProps {
 
 export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurchase, userId }) => {
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMethod, setProcessingMethod] = useState<PaymentMethod | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -25,7 +25,7 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
       return;
     }
 
-    setIsProcessing(true);
+    setProcessingMethod(method);
     setError(null);
 
     try {
@@ -52,13 +52,13 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
       setError('Payment failed. Please try again.');
       console.error('Payment error:', err);
     } finally {
-      setIsProcessing(false);
+      setProcessingMethod(null);
     }
   };
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl relative overflow-hidden">
+      <div className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl relative overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-yellow-600 to-orange-600 p-6">
           <button
@@ -77,10 +77,23 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
 
         {/* Packages Grid */}
         <div className="p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {CREDIT_PACKAGES.map((pkg) => (
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-stretch">
+            {/* Tester Package */}
+            <PackageCard 
+              package={CREDIT_PACKAGES[0]} 
+              isSelected={selectedPackage === CREDIT_PACKAGES[0].id}
+              onSelect={() => setSelectedPackage(CREDIT_PACKAGES[0].id)} 
+            />
+            
+            {/* Divider */}
+            <div className="hidden sm:flex items-center justify-center px-2">
+              <div className="h-full w-px bg-gradient-to-b from-transparent via-gray-500 to-transparent"></div>
+            </div>
+            
+            {/* Other Packages */}
+            {CREDIT_PACKAGES.slice(1).map((pkg) => (
               <PackageCard 
-                key={pkg.id} 
+                key={pkg.id}
                 package={pkg} 
                 isSelected={selectedPackage === pkg.id}
                 onSelect={() => setSelectedPackage(pkg.id)} 
@@ -103,25 +116,25 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
                 {/* Stripe (Card) Button */}
                 <button
                   onClick={() => handlePayment('stripe')}
-                  disabled={isProcessing}
+                  disabled={processingMethod !== null}
                   className="flex items-center gap-2 px-6 py-3 bg-[#635BFF] hover:bg-[#5851ea] text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M3 10h18v7a3 3 0 01-3 3H6a3 3 0 01-3-3v-7zm0-3a3 3 0 013-3h12a3 3 0 013 3v1H3V7z"/>
                   </svg>
-                  {isProcessing ? 'Processing...' : 'Pay with Card'}
+                  {processingMethod === 'stripe' ? 'Processing...' : 'Pay with Card'}
                 </button>
 
                 {/* PayPal Button */}
                 <button
                   onClick={() => handlePayment('paypal')}
-                  disabled={isProcessing}
+                  disabled={processingMethod !== null}
                   className="flex items-center gap-2 px-6 py-3 bg-[#0070BA] hover:bg-[#005ea6] text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944 3.72a.77.77 0 01.76-.654h6.39c2.117 0 3.832.476 5.1 1.415 1.267.94 1.9 2.28 1.9 4.02 0 .94-.158 1.79-.474 2.55-.316.76-.77 1.42-1.362 1.98-.592.56-1.3.99-2.124 1.29-.824.3-1.743.45-2.757.45H9.72l-.95 6.567a.77.77 0 01-.76.654H7.076z"/>
                   </svg>
-                  {isProcessing ? 'Processing...' : 'PayPal'}
+                  {processingMethod === 'paypal' ? 'Processing...' : 'PayPal'}
                 </button>
               </div>
             </div>
@@ -153,7 +166,7 @@ const PackageCard: React.FC<PackageCardProps> = ({ package: pkg, isSelected, onS
 
   return (
     <div 
-      className={`relative bg-gray-700/50 border-2 rounded-xl p-4 hover:border-yellow-500 transition-all cursor-pointer
+      className={`relative bg-gray-700/50 border-2 rounded-xl p-4 hover:border-yellow-500 transition-all cursor-pointer w-full sm:w-44 flex-shrink-0
         ${isSelected ? 'border-yellow-500 ring-2 ring-yellow-500/30' : pkg.badge ? 'border-yellow-500/50' : 'border-gray-600'}`}
       onClick={onSelect}
     >
@@ -187,11 +200,15 @@ const PackageCard: React.FC<PackageCardProps> = ({ package: pkg, isSelected, onS
         </div>
 
         <div className="text-2xl font-bold text-white mb-1">
-          €{pkg.price.toFixed(2)}
+          €{pkg.priceNet.toFixed(2)} <span className="text-sm font-normal text-gray-400">netto</span>
         </div>
 
-        <div className="text-xs text-gray-400">
-          €{pkg.pricePerCredit.toFixed(3)} per credit
+        <div className="text-sm text-gray-400 mb-1">
+          €{pkg.priceGross.toFixed(2)} <span className="text-xs">inkl. 19% MwSt.</span>
+        </div>
+
+        <div className="text-xs text-gray-500">
+          €{pkg.pricePerCredit.toFixed(3)} pro Credit
         </div>
 
         {pkg.savings && (

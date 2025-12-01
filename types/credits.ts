@@ -8,63 +8,66 @@ export const CREDITS_PER_AI_VARIATION = 10;      // AI-generated variations
 // Welcome bonus for new users
 export const WELCOME_BONUS_CREDITS = 15;
 
+// VAT rate for Germany
+export const VAT_RATE = 0.19;
+
 // Credit packages for purchase
 export interface CreditPackage {
   id: string;
   name: string;
   credits: number;
-  price: number;           // in EUR
-  pricePerCredit: number;  // calculated
+  priceNet: number;        // Netto price in EUR (without VAT)
+  priceGross: number;      // Brutto price in EUR (with 19% VAT)
+  pricePerCredit: number;  // calculated from net price
   savings?: number;        // percentage saved vs starter
   badge?: 'popular' | 'best-value';
   logosIncluded: number;   // based on Fast Mode (2 credits per logo)
 }
 
+// Helper to calculate gross price from net
+const withVAT = (netPrice: number): number => Math.round(netPrice * (1 + VAT_RATE) * 100) / 100;
+
 export const CREDIT_PACKAGES: CreditPackage[] = [
   {
-    id: 'test',
-    name: '🧪 Test',
-    credits: 1,
-    price: 0.50,
-    pricePerCredit: 0.50,
-    logosIncluded: 0,
-  },
-  {
     id: 'starter',
-    name: 'Starter',
+    name: 'Tester',
     credits: 30,
-    price: 2.99,
+    priceNet: 2.99,
+    priceGross: withVAT(2.99),
     pricePerCredit: 0.10,
-    logosIncluded: 15, // 30 / 2 credits per logo (Fast Mode)
+    logosIncluded: 15,
   },
   {
     id: 'standard',
     name: 'Standard',
     credits: 100,
-    price: 7.99,
+    priceNet: 7.99,
+    priceGross: withVAT(7.99),
     pricePerCredit: 0.08,
     savings: 20,
-    badge: 'popular',
-    logosIncluded: 50, // 100 / 2
+    logosIncluded: 50,
   },
   {
     id: 'pro',
     name: 'Pro',
     credits: 300,
-    price: 19.99,
+    priceNet: 19.99,
+    priceGross: withVAT(19.99),
     pricePerCredit: 0.067,
     savings: 33,
-    logosIncluded: 150, // 300 / 2
+    badge: 'popular',
+    logosIncluded: 150,
   },
   {
     id: 'premium',
     name: 'Premium',
     credits: 1000,
-    price: 49.99,
+    priceNet: 49.99,
+    priceGross: withVAT(49.99),
     pricePerCredit: 0.05,
     savings: 50,
     badge: 'best-value',
-    logosIncluded: 500, // 1000 / 2
+    logosIncluded: 500,
   },
 ];
 
