@@ -116,7 +116,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits,
                 onClick={() => { setIsOpen(false); onShowReferrals(); }}
                 className="w-full text-left px-4 py-2 text-purple-400 hover:bg-purple-500/20 rounded-lg transition-colors flex items-center gap-2"
               >
-                <span>🎁</span> Referral Program
+                <span>🎁</span> Get & Gift Free Credits
               </button>
             )}
             {onShowInvoices && (

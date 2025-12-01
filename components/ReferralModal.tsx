@@ -12,8 +12,8 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, u
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg relative overflow-hidden">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg relative overflow-hidden my-auto max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6">
           <button
@@ -31,37 +31,31 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, u
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-4">
           <ReferralSection userId={userId} />
           
-          {/* How it works */}
-          <div className="mt-6 bg-gray-700/30 rounded-xl p-4">
-            <h3 className="text-white font-medium mb-3">How it works</h3>
-            <ol className="space-y-2 text-sm text-gray-300">
+          {/* How it works - compact */}
+          <div className="mt-4 bg-gray-700/30 rounded-xl p-3">
+            <h3 className="text-white font-medium text-sm mb-2">How it works</h3>
+            <ol className="space-y-1 text-xs text-gray-300">
               <li className="flex gap-2">
                 <span className="text-purple-400 font-bold">1.</span>
-                <span>Generate your personal referral code above</span>
+                <span>Generate & share your code</span>
               </li>
               <li className="flex gap-2">
                 <span className="text-purple-400 font-bold">2.</span>
-                <span>Share the code or link with friends</span>
+                <span>Friend uses code on first purchase</span>
               </li>
               <li className="flex gap-2">
                 <span className="text-purple-400 font-bold">3.</span>
-                <span>When they make their first purchase, you get <span className="text-yellow-400 font-bold">+50 credits</span></span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-purple-400 font-bold">4.</span>
-                <span>They get <span className="text-pink-400 font-bold">+20% bonus</span> on their purchase</span>
+                <span>You get <span className="text-yellow-400 font-bold">+50 credits</span>, they get <span className="text-pink-400 font-bold">+20% bonus</span></span>
               </li>
             </ol>
           </div>
 
-          {/* Tips */}
-          <div className="mt-4 text-xs text-gray-500 space-y-1">
-            <p>💡 Bigger packages = more bonus credits for your friend</p>
-            <p>💡 No limit on how many friends you can refer</p>
-            <p>💡 Referral codes can only be used on first purchase</p>
+          {/* Tips - compact */}
+          <div className="mt-3 text-xs text-gray-500">
+            <p>💡 No limit on referrals • Codes work on first purchase only</p>
           </div>
         </div>
       </div>
