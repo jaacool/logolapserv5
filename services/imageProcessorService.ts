@@ -5,8 +5,28 @@ import { dataUrlToImageElement } from "../utils/fileUtils";
 
 declare const cv: any; // Using 'any' for simplicity with OpenCV.js
 
-// Utility to load an image element into a cv.Mat
-const loadImageToMat = (image: HTMLImageElement): any => {
+// Maximum dimension for OpenCV processing to prevent memory issues
+const MAX_OPENCV_DIMENSION = 2000;
+
+// Utility to load an image element into a cv.Mat (with optional downscaling for large images)
+const loadImageToMat = (image: HTMLImageElement, maxDimension: number = MAX_OPENCV_DIMENSION): any => {
+    const canvas = document.createElement('canvas');
+    
+    // Calculate scale factor if image is too large
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    
+    canvas.width = Math.round(image.naturalWidth * scale);
+    canvas.height = Math.round(image.naturalHeight * scale);
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get canvas context');
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return cv.matFromImageData(imageData);
+};
+
+// Load image at full resolution (for final output)
+const loadImageToMatFullRes = (image: HTMLImageElement): any => {
     const canvas = document.createElement('canvas');
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;

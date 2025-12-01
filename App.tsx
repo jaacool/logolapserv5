@@ -212,45 +212,31 @@ export default function App() {
     const newPreviousStates = new Map(previousFileStates);
     
     // Run luminance inversion detection when a new master is selected
-    if (newMasterId && cvReady) {
-      const masterFile = uploadedFiles.find(f => f.id === newMasterId);
-      if (masterFile) {
-        console.log('Running luminance inversion detection after master selection...');
-        
-        // Detect inversion for all non-master files
-        const updatedFiles = await Promise.all(
-          uploadedFiles.map(async (file) => {
-            if (file.id === newMasterId) {
-              // Master: save state and disable corrections
-              newPreviousStates.set(file.id, {
-                needsPerspectiveCorrection: file.needsPerspectiveCorrection || false,
-                needsSimpleMatch: file.needsSimpleMatch || false
-              });
-              return { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false, isLuminanceInverted: false };
+    if (newMasterId) {
+      // Update files without automatic luminance detection (disabled to prevent memory issues)
+      setUploadedFiles(prevFiles => {
+        return prevFiles.map(file => {
+          if (file.id === newMasterId) {
+            // Master: save state and disable corrections
+            newPreviousStates.set(file.id, {
+              needsPerspectiveCorrection: file.needsPerspectiveCorrection || false,
+              needsSimpleMatch: file.needsSimpleMatch || false
+            });
+            return { ...file, needsPerspectiveCorrection: false, needsSimpleMatch: false, isLuminanceInverted: false };
+          }
+          
+          if (file.id === masterFileId) {
+            // Old master: restore previous state
+            const previousState = newPreviousStates.get(file.id);
+            if (previousState && typeof previousState === 'object') {
+              return { ...file, ...previousState };
             }
-            
-            if (file.id === masterFileId) {
-              // Old master: restore previous state
-              const previousState = newPreviousStates.get(file.id);
-              if (previousState && typeof previousState === 'object') {
-                return { ...file, ...previousState };
-              }
-            }
-            
-            // Detect luminance inversion for other files
-            try {
-              const isInverted = detectLuminanceInversion(masterFile.imageElement, file.imageElement);
-              console.log(`Luminance inversion for ${file.file.name}: ${isInverted ? 'INVERTED' : 'NORMAL'}`);
-              return { ...file, isLuminanceInverted: isInverted };
-            } catch (err) {
-              console.warn(`Luminance inversion detection failed for ${file.file.name}:`, err);
-              return file;
-            }
-          })
-        );
-        
-        setUploadedFiles(updatedFiles);
-      }
+          }
+          
+          // All files default to normal (not inverted) - user can toggle manually if needed
+          return { ...file, isLuminanceInverted: false };
+        });
+      });
     } else {
       // No new master selected, just update states
       setUploadedFiles(prevFiles => {
