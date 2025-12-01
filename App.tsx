@@ -497,9 +497,9 @@ export default function App() {
 
     // Calculate credit cost for single edge fill based on resolution
     const getEdgeFillCreditCost = useCallback(() => {
-        if (edgeFillResolution >= 4096) return 3; // ultra
-        if (edgeFillResolution > 1024) return 2;  // premium
-        return 1; // standard
+        if (edgeFillResolution >= 4096) return 12; // ultra - CREDITS_PER_ULTRA_EDGE_FILL
+        if (edgeFillResolution > 1024) return 9;   // premium - CREDITS_PER_PREMIUM_EDGE_FILL
+        return 6; // standard - CREDITS_PER_STANDARD_EDGE_FILL
     }, [edgeFillResolution]);
 
     const handleRetryEdgeFill = useCallback(async (fileId: string) => {

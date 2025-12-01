@@ -26,18 +26,25 @@ export const processWithNanobanana = async (
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
 
     // Prompt designed for seamless edge fill while preserving logo structure
-    const prompt = `TASK: Seamlessly fill the black/empty border areas around the edges of this image.
+    const prompt = `TASK: Fill ALL black/empty/cropped border areas around the edges of this image with seamless background extension.
 
-CRITICAL RULES:
-1. Do NOT resize, rotate, reposition, or structurally modify the central logo/object
-2. The logo must stay the EXACT same size and position
-3. You MAY enhance quality (sharpen, improve resolution, remove watermarks) but NOT change composition
-4. Fill borders by SEAMLESSLY extending the background - NO visible edges or seams between original and filled areas
-5. The transition from original content to filled areas must be completely smooth and invisible
-6. Match the lighting, texture, color, and style of the existing background perfectly
-7. The final image must look like ONE cohesive image - no "picture in picture" effect
+ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:
+1. ZERO BLACK EDGES: There must be NO black pixels, NO dark borders, NO empty areas remaining in the final image
+2. COMPLETE FILL: Every single edge and corner must be filled with appropriate background content
+3. NO CROPPING: Do not crop or cut off ANY part of the image - only ADD content to fill empty areas
 
-OUTPUT: A clean, seamless image where the filled borders are indistinguishable from the original background.`;
+LOGO PRESERVATION:
+4. Do NOT resize, rotate, reposition, or structurally modify the central logo/object
+5. The logo must stay the EXACT same size and position
+6. You MAY enhance quality (sharpen, improve resolution, remove watermarks) but NOT change composition
+
+SEAMLESS BLENDING:
+7. Fill borders by SEAMLESSLY extending the background - NO visible edges or seams
+8. The transition from original content to filled areas must be completely smooth and invisible
+9. Match the lighting, texture, color, and style of the existing background perfectly
+10. The final image must look like ONE cohesive image - no "picture in picture" effect
+
+OUTPUT: A complete image with NO black edges, where all borders are filled with seamlessly blended background content.`;
 
     try {
         const response = await ai.models.generateContent({
