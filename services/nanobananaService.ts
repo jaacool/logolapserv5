@@ -66,6 +66,13 @@ BACKGROUND FILL:
 
 OUTPUT: A complete ${aspectRatio} image where the full logo is visible and all surrounding areas are filled with seamlessly blended background.`;
 
+    // Map resolution to imageSize
+    const getImageSize = (res: number): string => {
+        if (res >= 4096) return '4K';
+        if (res >= 2048) return '2K';
+        return '1K';
+    };
+
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-image-preview', 
@@ -82,6 +89,10 @@ OUTPUT: A complete ${aspectRatio} image where the full logo is visible and all s
             },
             config: {
                 responseModalities: ['TEXT', 'IMAGE'],
+                imageConfig: {
+                    aspectRatio: aspectRatio,
+                    imageSize: getImageSize(resolution),
+                } as any, // imageSize is valid for gemini-3-pro-image-preview but not in TS types yet
             }
         });
 
