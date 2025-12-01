@@ -494,15 +494,25 @@ export default function App() {
     processedFilesRef.current = processedFiles;
 
     const handleRetryEdgeFill = useCallback(async (fileId: string) => {
+        console.log('[RetryEdgeFill] 🚀 Starting retry for fileId:', fileId);
+        
         // Get current file from ref to ensure we have the latest version
         const file = processedFilesRef.current.find(f => f.id === fileId);
-        if (!file) return;
+        console.log('[RetryEdgeFill] 📁 Found file in ref:', file ? file.originalName : 'NOT FOUND');
+        console.log('[RetryEdgeFill] 📊 Current processedFiles count:', processedFilesRef.current.length);
+        
+        if (!file) {
+            console.error('[RetryEdgeFill] ❌ File not found, aborting');
+            return;
+        }
 
         const creditCost = getEdgeFillCreditCost();
+        console.log('[RetryEdgeFill] 💰 Credit cost:', creditCost);
         
         // Check if user has enough credits
         if (user) {
             const hasCredits = await hasEnoughCredits(creditCost);
+            console.log('[RetryEdgeFill] 💳 Has enough credits:', hasCredits);
             if (!hasCredits) {
                 setInsufficientCreditsModal({ isOpen: true, creditsNeeded: creditCost });
                 return;
@@ -512,29 +522,51 @@ export default function App() {
         // Add to retrying set
         setRetryingEdgeFillIds(prev => new Set(prev).add(fileId));
         setError(null);
+        console.log('[RetryEdgeFill] ⏳ Added to retrying set, starting API call...');
 
         try {
             // Get the CURRENT processedUrl from the ref (not from closure)
             const currentFile = processedFilesRef.current.find(f => f.id === fileId);
             if (!currentFile) throw new Error("File not found");
             
+            console.log('[RetryEdgeFill] 🖼️ Input URL length:', currentFile.processedUrl.length);
+            console.log('[RetryEdgeFill] 🖼️ Input URL prefix:', currentFile.processedUrl.substring(0, 50));
+            
             const filledUrl = await processWithNanobanana(currentFile.processedUrl, edgeFillResolution, aspectRatio);
+            
+            console.log('[RetryEdgeFill] ✅ API returned successfully!');
+            console.log('[RetryEdgeFill] 🖼️ Output URL length:', filledUrl.length);
+            console.log('[RetryEdgeFill] 🖼️ Output URL prefix:', filledUrl.substring(0, 50));
+            console.log('[RetryEdgeFill] 🔄 URLs are different:', currentFile.processedUrl !== filledUrl);
             
             // Deduct credits ONLY after successful processing
             if (user) {
                 await deductCredits(creditCost);
                 const newCredits = await getCredits();
                 setCredits(newCredits);
+                console.log('[RetryEdgeFill] 💰 Credits deducted, new balance:', newCredits);
             }
 
-            setProcessedFiles(prev => prev.map(f => 
-                f.id === fileId ? { ...f, processedUrl: filledUrl } : f
-            ));
+            console.log('[RetryEdgeFill] 📝 About to call setProcessedFiles...');
+            setProcessedFiles(prev => {
+                console.log('[RetryEdgeFill] 📝 Inside setProcessedFiles, prev length:', prev.length);
+                const updated = prev.map(f => {
+                    if (f.id === fileId) {
+                        console.log('[RetryEdgeFill] 📝 Updating file:', f.id, 'old URL length:', f.processedUrl.length, 'new URL length:', filledUrl.length);
+                        return { ...f, processedUrl: filledUrl };
+                    }
+                    return f;
+                });
+                console.log('[RetryEdgeFill] 📝 Updated array created, length:', updated.length);
+                return updated;
+            });
+            console.log('[RetryEdgeFill] ✅ setProcessedFiles called');
         } catch (err) {
-            console.error("Retry Edge Fill failed:", err);
+            console.error("[RetryEdgeFill] ❌ Retry Edge Fill failed:", err);
             setError(prev => (prev ? prev + ' | ' : '') + `Edge Fill retry failed for ${file.originalName}: ${(err as Error).message}`);
         } finally {
             // Remove from retrying set
+            console.log('[RetryEdgeFill] 🏁 Finally block, removing from retrying set');
             setRetryingEdgeFillIds(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(fileId);

@@ -18,8 +18,12 @@ export const processWithNanobanana = async (
     resolution: number = 1024,
     aspectRatio: '9:16' | '1:1' | '16:9' = '9:16'
 ): Promise<string> => {
+    console.log('[Nanobanana] 🚀 Starting processWithNanobanana');
+    console.log('[Nanobanana] 📊 Input URL length:', imageUrl.length);
+    console.log('[Nanobanana] 📊 Resolution:', resolution, 'Aspect Ratio:', aspectRatio);
     
     const apiKey = getApiKey();
+    console.log('[Nanobanana] 🔑 API key obtained (length):', apiKey.length);
     const ai = new GoogleGenAI({ apiKey });
 
     // Calculate dimensions based on aspect ratio
@@ -36,8 +40,11 @@ export const processWithNanobanana = async (
     }
 
     // Resize to specified resolution with correct aspect ratio
+    console.log('[Nanobanana] 🖼️ Resizing to:', width, 'x', height);
     const resizedImageUrl = await resizeImage(imageUrl, width, height);
+    console.log('[Nanobanana] 🖼️ Resized URL length:', resizedImageUrl.length);
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
+    console.log('[Nanobanana] 🖼️ Base64 length:', imageBase64.length);
 
     // Prompt designed for seamless edge fill while preserving logo structure
     const prompt = `TASK: Create a complete ${aspectRatio} aspect ratio image by filling ALL empty/black/cropped areas with seamless background.
@@ -74,6 +81,7 @@ OUTPUT: A complete ${aspectRatio} image where the full logo is visible and all s
     };
 
     try {
+        console.log('[Nanobanana] 📡 Sending request to Gemini API...');
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-image-preview', 
             contents: {
@@ -96,16 +104,24 @@ OUTPUT: A complete ${aspectRatio} image where the full logo is visible and all s
             }
         });
 
+        console.log('[Nanobanana] 📥 Response received from Gemini API');
         const candidate = response.candidates?.[0];
+        console.log('[Nanobanana] 📊 Candidates count:', response.candidates?.length || 0);
         if (!candidate) throw new Error("No candidates returned from AI.");
 
+        console.log('[Nanobanana] 📊 Parts count:', candidate.content.parts.length);
         for (const part of candidate.content.parts) {
+            console.log('[Nanobanana] 📊 Part type:', part.text ? 'text' : part.inlineData ? 'inlineData' : 'unknown');
             if (part.inlineData) {
                 const base64ImageBytes: string = part.inlineData.data;
-                return `data:image/png;base64,${base64ImageBytes}`;
+                console.log('[Nanobanana] ✅ Image received! Base64 length:', base64ImageBytes.length);
+                const resultUrl = `data:image/png;base64,${base64ImageBytes}`;
+                console.log('[Nanobanana] ✅ Returning data URL, length:', resultUrl.length);
+                return resultUrl;
             }
         }
         
+        console.error('[Nanobanana] ❌ No image in response parts');
         throw new Error("AI did not return an image in the response.");
 
     } catch (error) {
