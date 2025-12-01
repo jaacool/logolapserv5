@@ -53,11 +53,8 @@ const getFriendlyErrorMessage = (err: any, context: string) => {
     if (rawMessage.includes('Not enough good matches')) {
         return `Alignment failed for "${context}". The image may be too blurry, low-contrast, or different from the master. Tip: Try enabling "Greedy Mode" for difficult images.`;
     }
-    if (rawMessage.includes('API key expired')) {
-        return 'Your API key has expired. Please enter a new, valid key and try again.';
-    }
-    if (rawMessage.includes('API key not valid') || rawMessage.includes('API_KEY_INVALID')) {
-        return 'Your API key is not valid. Please enter a valid key and try again.';
+    if (rawMessage.includes('GEMINI_API_KEY not configured')) {
+        return 'Server API key not configured. Please contact support.';
     }
     if (rawMessage.includes('OpenCV internal error code')) {
         return `A low-level image alignment error occurred for "${context}". The perspective transform became unstable or invalid for this image. Try a cleaner scan, less extreme perspective, or disabling perspective correction for this file.`;
@@ -97,7 +94,7 @@ export default function App() {
   const [fixingImageId, setFixingImageId] = useState<string | null>(null);
   const [promptSnippets, setPromptSnippets] = useState<string[]>(DEFAULT_PROMPT_SNIPPETS);
   const [selectedSnippets, setSelectedSnippets] = useState<string[]>(DEFAULT_PROMPT_SNIPPETS);
-  const [apiKey, setApiKey] = useState<string>('');
+  // API Key is now handled server-side via Supabase Edge Function
   const [projectContext, setProjectContext] = useState<string>('');
   const [contextImageFile, setContextImageFile] = useState<File | null>(null);
   
@@ -125,11 +122,6 @@ export default function App() {
       }
     };
     checkCv();
-
-    const storedApiKey = localStorage.getItem('logoLapserApiKey');
-    if (storedApiKey) {
-        setApiKey(storedApiKey);
-    }
 
     const storedSnippets = localStorage.getItem('logoLapserPromptSnippets');
     if (storedSnippets) {
@@ -200,11 +192,6 @@ export default function App() {
     
     return () => unsubscribe();
   }, []);
-
-  const handleApiKeyChange = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('logoLapserApiKey', key);
-  };
 
   const handleAddSnippet = (newSnippet: string) => {
     const trimmedSnippet = newSnippet.trim();
@@ -427,9 +414,9 @@ export default function App() {
                 targetFile.isLuminanceInverted || false
             );
 
-            if (isAiEdgeFillEnabled && apiKey) {
+            if (isAiEdgeFillEnabled) {
                 try {
-                    processedUrl = await processWithNanobanana(processedUrl, apiKey);
+                    processedUrl = await processWithNanobanana(processedUrl);
                 } catch (fillErr) {
                      console.error("AI Edge Fill failed during fix:", fillErr);
                      setError(`Edge Fill failed: ${(fillErr as Error).message}`);
@@ -444,7 +431,7 @@ export default function App() {
         } finally {
             setFixingImageId(null);
         }
-    }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio, isAiEdgeFillEnabled, apiKey]);
+    }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio, isAiEdgeFillEnabled]);
 
     const handleSimpleMatchFix = useCallback(async (fileId: string) => {
         const targetFile = uploadedFiles.find(f => f.id === fileId);
@@ -488,9 +475,9 @@ export default function App() {
                 }
             }
 
-            if (isAiEdgeFillEnabled && apiKey) {
+            if (isAiEdgeFillEnabled) {
                 try {
-                    processedUrl = await processWithNanobanana(processedUrl, apiKey);
+                    processedUrl = await processWithNanobanana(processedUrl);
                 } catch (fillErr) {
                      console.error("AI Edge Fill failed during fix:", fillErr);
                      setError(`Edge Fill failed: ${(fillErr as Error).message}`);
@@ -505,7 +492,7 @@ export default function App() {
         } finally {
             setFixingImageId(null);
         }
-    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio, isAiEdgeFillEnabled, apiKey]);
+    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio, isAiEdgeFillEnabled]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
@@ -566,15 +553,7 @@ export default function App() {
             setError("Please select a master image and upload at least one other image.");
             return;
         }
-        if (isAiVariationsEnabled && !apiKey) {
-            setError("Please enter your Google AI API key to generate variations.");
-            return;
-        }
-        if (isAiEdgeFillEnabled && !apiKey) {
-            setError("Please enter your Google AI API key (Nanobanana) to perform AI Edge Fill.");
-            return;
-        }
-
+        
         // Calculate credits needed for this batch (Draft mode is FREE)
         const imageCount = uploadedFiles.filter(f => f.id !== masterFileId).length;
         const edgeFillMode: 'none' | 'standard' | 'premium' | 'ultra' = !isAiEdgeFillEnabled 
@@ -684,8 +663,8 @@ export default function App() {
             const hasPerspectiveFiles = perspectiveFiles.length > 0;
             const hasInvertedFiles = invertedFiles.length > 0;
             const willRunEnsemble = isEnsembleCorrectionEnabled && uploadedFiles.length > 1;
-            const willRunEdgeFill = isAiEdgeFillEnabled && apiKey;
-            const willRunAI = isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey;
+            const willRunEdgeFill = isAiEdgeFillEnabled;
+            const willRunAI = isAiVariationsEnabled && selectedSnippets.length > 0;
 
             let totalStages = 1; // Start with 1 for Standard
             if (hasSimpleMatchFiles) totalStages++;
@@ -897,7 +876,7 @@ export default function App() {
                     // Actually processImageLocally processes master too (crops/pads).
                     // So we should fill everything.
                     try {
-                         const filledUrl = await processWithNanobanana(file.processedUrl, apiKey, edgeFillResolution);
+                         const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution);
                          filledResults.push({ ...file, processedUrl: filledUrl });
                     } catch (fillErr) {
                         console.error("AI Edge Fill failed for", file.originalName, fillErr);
@@ -914,7 +893,7 @@ export default function App() {
             }
 
             let finalResults = stage4Results;
-            if (isAiVariationsEnabled && selectedSnippets.length > 0 && apiKey) {
+            if (isAiVariationsEnabled && selectedSnippets.length > 0) {
                 currentStage++;
                 setProcessingStatus(`Stage ${currentStage}/${totalStages}: Generating AI variations...`);
                 await yieldToMain();
@@ -950,7 +929,7 @@ export default function App() {
                     }
 
                     try {
-                        const variationDataUrl = await generateVariation(referenceImages, fullPrompt, apiKey, contextBase64);
+                        const variationDataUrl = await generateVariation(referenceImages, fullPrompt, contextBase64);
                         const variationImageElement = await dataUrlToImageElement(variationDataUrl);
 
                         const masterResult = finalResults.find(f => f.id === masterFileId);
@@ -1021,7 +1000,7 @@ export default function App() {
         uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, 
         isEnsembleCorrectionEnabled, isPerspectiveCorrectionEnabled, isAiEdgeFillEnabled,
         isAiVariationsEnabled, numVariations, isSimpleMatchEnabled, isDraftMode,
-        aspectRatio, selectedSnippets, apiKey, contextImageFile, edgeFillResolution, projectContext, user
+        aspectRatio, selectedSnippets, contextImageFile, edgeFillResolution, projectContext, user
     ]);
     
   // Helper to format time nicely (e.g. "1m 30s" or "45s")
@@ -1245,17 +1224,6 @@ export default function App() {
                                         onChange={setProjectContext} 
                                         isDisabled={!isAiVariationsEnabled}
                                     />
-                                    <div className="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
-                                        <label htmlFor="api-key-input" className="text-xs text-gray-400 font-medium block mb-1.5">Google AI API Key</label>
-                                        <input 
-                                            id="api-key-input"
-                                            type="password"
-                                            value={apiKey}
-                                            onChange={(e) => handleApiKeyChange(e.target.value)}
-                                            placeholder="Paste API key..."
-                                            className="w-full bg-gray-900 text-gray-200 border border-gray-600 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
-                                        />
-                                    </div>
                                 </div>
                             )}
                         </div> */}
@@ -1286,7 +1254,7 @@ export default function App() {
                         ) : (
                            <button
                               onClick={handleProcessImages}
-                              disabled={!masterFileId || (isAiVariationsEnabled && !apiKey)}
+                              disabled={!masterFileId}
                               className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl shadow-lg hover:shadow-cyan-500/20 hover:from-cyan-500 hover:to-blue-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
                            >
                               Align & Generate

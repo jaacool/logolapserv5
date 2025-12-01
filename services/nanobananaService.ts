@@ -4,16 +4,21 @@ import { resizeImage } from '../utils/fileUtils';
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
 
+// Get API key from environment (set in Vercel/hosting provider)
+const getApiKey = (): string => {
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        throw new Error("API Key is not configured. Please set the GEMINI_API_KEY environment variable in your hosting provider.");
+    }
+    return apiKey;
+};
+
 export const processWithNanobanana = async (
     imageUrl: string, 
-    apiKey: string,
     resolution: number = 1024
 ): Promise<string> => {
     
-    if (!apiKey) {
-        throw new Error("API Key is required for AI Edge Fill.");
-    }
-
+    const apiKey = getApiKey();
     const ai = new GoogleGenAI({ apiKey });
 
     // Resize to specified resolution
@@ -25,7 +30,7 @@ export const processWithNanobanana = async (
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-image-preview', 
+            model: 'gemini-2.0-flash-exp-image-generation', 
             contents: {
                 parts: [
                     { text: prompt },
@@ -36,6 +41,9 @@ export const processWithNanobanana = async (
                         }
                     }
                 ]
+            },
+            config: {
+                responseModalities: ['TEXT', 'IMAGE'],
             }
         });
 
@@ -52,7 +60,7 @@ export const processWithNanobanana = async (
         throw new Error("AI did not return an image in the response.");
 
     } catch (error) {
-        console.error("Nanobanana (Google AI) processing failed:", error);
+        console.error("Nanobanana (Edge Fill) processing failed:", error);
         throw error;
     }
 };

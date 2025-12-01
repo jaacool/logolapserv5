@@ -1,16 +1,25 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import type { ProcessedFile } from '../types';
 import { resizeImage } from '../utils/fileUtils';
 
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
 
+// Get API key from environment (set in Vercel/hosting provider)
+const getApiKey = (): string => {
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        throw new Error("API Key is not configured. Please set the GEMINI_API_KEY environment variable in your hosting provider.");
+    }
+    return apiKey;
+};
+
 export const generateVariation = async (
     referenceImages: ProcessedFile[], 
     prompt: string,
-    apiKey: string,
     contextImageUrl?: string
 ): Promise<string> => {
+    const apiKey = getApiKey();
     const ai = new GoogleGenAI({ apiKey });
 
     // Resize images to avoid payload limits (max 1024px)
@@ -44,28 +53,26 @@ export const generateVariation = async (
 
     const contents = { parts: [textPart, ...imageParts] };
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview',
-        contents: contents,
-        config: {
-            // @ts-ignore - ImageConfig is available in newer SDK versions but might strict check here
-            imageConfig: {
-                aspectRatio: "9:16", // Default to vertical as per App.tsx default, or could pass it in. 
-                                     // For now hardcoding to match typical use or omitting to let model decide.
-                                     // Actually, let's omit specific aspect ratio here to let it follow the input image context 
-                                     // or add it if strictly needed. Let's start with just the correct model name and minimal config.
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.0-flash-exp-image-generation',
+            contents: contents,
+            config: {
+                responseModalities: ['TEXT', 'IMAGE'],
             }
-        },
-    });
+        });
 
-    // Extract the image data
-    for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-            const base64ImageBytes: string = part.inlineData.data;
-            // Return as a data URL to be consistent
-            return `data:image/png;base64,${base64ImageBytes}`;
+        // Extract the image data
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                return `data:image/png;base64,${base64ImageBytes}`;
+            }
         }
+        
+        throw new Error("AI did not return an image.");
+    } catch (error) {
+        console.error("AI Variation generation failed:", error);
+        throw error;
     }
-    
-    throw new Error("AI did not return an image.");
 };
