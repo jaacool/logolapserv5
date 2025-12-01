@@ -867,28 +867,23 @@ export default function App() {
             let stage4Results = stage3_5Results;
             if (willRunEdgeFill) {
                 currentStage++;
-                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Performing AI Edge Fill...`);
+                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Performing AI Edge Fill (${stage4Results.length} images in parallel)...`);
                 await yieldToMain();
 
-                let filledResults: ProcessedFile[] = [];
-                for (const file of stage4Results) {
-                    // Don't fill master if it didn't need processing? 
-                    // Actually processImageLocally processes master too (crops/pads).
-                    // So we should fill everything.
+                // Process all images in parallel
+                const fillPromises = stage4Results.map(async (file) => {
                     try {
-                         const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution);
-                         filledResults.push({ ...file, processedUrl: filledUrl });
+                        const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution);
+                        return { ...file, processedUrl: filledUrl, success: true };
                     } catch (fillErr) {
                         console.error("AI Edge Fill failed for", file.originalName, fillErr);
                         setError(prev => (prev ? prev + ' | ' : '') + `Edge Fill failed for ${file.originalName}: ${(fillErr as Error).message}`);
-                        filledResults.push(file);
+                        return { ...file, success: false };
                     }
-                    // Update UI progressively? Or just wait for batch?
-                    // Let's update progressively so user sees progress
-                    setProcessedFiles([...filledResults, ...stage4Results.slice(filledResults.length)]);
-                    await yieldToMain();
-                }
-                stage4Results = filledResults;
+                });
+
+                const filledResults = await Promise.all(fillPromises);
+                stage4Results = filledResults.map(({ success, ...file }) => file);
                 setProcessedFiles(stage4Results);
             }
 
