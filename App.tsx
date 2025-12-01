@@ -69,7 +69,7 @@ export default function App() {
   const [processedFiles, setProcessedFiles] = useState<ProcessedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [retryingEdgeFillId, setRetryingEdgeFillId] = useState<string | null>(null);
+  const [retryingEdgeFillIds, setRetryingEdgeFillIds] = useState<Set<string>>(new Set());
   const [processingStatus, setProcessingStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
@@ -517,7 +517,8 @@ export default function App() {
             }
         }
 
-        setRetryingEdgeFillId(fileId);
+        // Add to retrying set
+        setRetryingEdgeFillIds(prev => new Set(prev).add(fileId));
         setError(null);
 
         try {
@@ -535,9 +536,14 @@ export default function App() {
             ));
         } catch (err) {
             console.error("Retry Edge Fill failed:", err);
-            setError(`Edge Fill retry failed for ${file.originalName}: ${(err as Error).message}`);
+            setError(prev => (prev ? prev + ' | ' : '') + `Edge Fill retry failed for ${file.originalName}: ${(err as Error).message}`);
         } finally {
-            setRetryingEdgeFillId(null);
+            // Remove from retrying set
+            setRetryingEdgeFillIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(fileId);
+                return newSet;
+            });
         }
     }, [processedFiles, edgeFillResolution, user, getEdgeFillCreditCost]);
 
@@ -1331,7 +1337,7 @@ export default function App() {
                                 onExport={handleExport}
                                 isExporting={isExporting}
                                 onRetryEdgeFill={isAiEdgeFillEnabled ? handleRetryEdgeFill : undefined}
-                                retryingEdgeFillId={retryingEdgeFillId}
+                                retryingEdgeFillIds={retryingEdgeFillIds}
                                 edgeFillCreditCost={getEdgeFillCreditCost()}
                             />
                         ) : (
