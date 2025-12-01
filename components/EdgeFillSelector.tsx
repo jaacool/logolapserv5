@@ -2,8 +2,8 @@ import React from 'react';
 import { SparklesIcon, LightningBoltIcon } from './Icons';
 
 interface EdgeFillSelectorProps {
-  value: 'fast' | 'pro';
-  onChange: (value: 'fast' | 'pro') => void;
+  value: 'draft' | 'fast' | 'pro';
+  onChange: (value: 'draft' | 'fast' | 'pro') => void;
   resolution: number;
   onResolutionChange: (res: number) => void;
   imageCount: number;
@@ -25,10 +25,29 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
   return (
     <div className="flex flex-col gap-3">
       <label className="text-gray-300 font-medium text-lg">
-        Edge Fill
+        Processing Mode
       </label>
       
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        {/* Draft Option */}
+        <button
+          onClick={() => onChange('draft')}
+          className={`relative flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 ${
+            value === 'draft'
+              ? 'border-yellow-500 bg-yellow-500/10 text-yellow-400'
+              : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800'
+          }`}
+        >
+          <svg className="w-6 h-6 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          <span className="font-bold">Draft</span>
+          <span className="text-xs opacity-70 mt-1">Test Settings</span>
+          <div className="absolute -top-2 -right-2 bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">
+            FREE
+          </div>
+        </button>
+
         {/* Fast Option */}
         <button
           onClick={() => onChange('fast')}
@@ -54,7 +73,7 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
         >
           <SparklesIcon className="w-6 h-6 mb-2" />
           <span className="font-bold">Pro</span>
-          <span className="text-xs opacity-70 mt-1">AI Inpainting</span>
+          <span className="text-xs opacity-70 mt-1">AI Edge Fill</span>
           {value === 'pro' && (
             <div className="absolute -top-2 -right-2 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
               +{estimatedTimeFormatted}

@@ -8,7 +8,7 @@ import { UserMenu } from './components/UserMenu';
 import { CreditShop } from './components/CreditShop';
 import { InsufficientCreditsModal } from './components/InsufficientCreditsModal';
 import { InvoiceModal } from './components/InvoiceModal';
-import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage } from './services/imageProcessorService';
+import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage, applyDraftModeProcessing } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { onAuthChange } from './services/authService';
@@ -86,7 +86,9 @@ export default function App() {
   // NEW LOGIC per User Request: Medium (2) = I + E (No P), High (3) = I + P + E
   const isPerspectiveCorrectionEnabled = stabilityLevel >= 3; // Perspective active only at level 3
   const isEnsembleCorrectionEnabled = stabilityLevel >= 2; // Ensemble active from level 2
-  const [isAiEdgeFillEnabled, setIsAiEdgeFillEnabled] = useState(false);
+  const [processingMode, setProcessingMode] = useState<'draft' | 'fast' | 'pro'>('fast');
+  const isAiEdgeFillEnabled = processingMode === 'pro';
+  const isDraftMode = processingMode === 'draft';
   const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
   const [isAiVariationsEnabled, setIsAiVariationsEnabled] = useState(false);
   const [isSimpleMatchEnabled, setIsSimpleMatchEnabled] = useState(false);
@@ -573,7 +575,7 @@ export default function App() {
             return;
         }
 
-        // Calculate credits needed for this batch
+        // Calculate credits needed for this batch (Draft mode is FREE)
         const imageCount = uploadedFiles.filter(f => f.id !== masterFileId).length;
         const edgeFillMode: 'none' | 'standard' | 'premium' | 'ultra' = !isAiEdgeFillEnabled 
           ? 'none' 
@@ -581,10 +583,10 @@ export default function App() {
           : edgeFillResolution > 1024 ? 'premium' 
           : 'standard';
         const aiVariationCount = isAiVariationsEnabled ? numVariations : 0;
-        const creditsNeeded = calculateCreditsNeeded(imageCount, edgeFillMode, aiVariationCount);
+        const creditsNeeded = isDraftMode ? 0 : calculateCreditsNeeded(imageCount, edgeFillMode, aiVariationCount);
         
-        // Check if user is logged in and has enough credits
-        if (user) {
+        // Check if user is logged in and has enough credits (skip for Draft mode)
+        if (user && !isDraftMode) {
             const hasCredits = await hasEnoughCredits(creditsNeeded);
             if (!hasCredits) {
                 setInsufficientCreditsModal({ isOpen: true, creditsNeeded });
@@ -975,12 +977,32 @@ export default function App() {
                 }
             }
 
+            // ========== DRAFT MODE: Apply watermark and downscale ==========
+            if (isDraftMode) {
+                setProcessingStatus('Applying draft mode (360p + watermark)...');
+                await yieldToMain();
+                
+                let draftResults: ProcessedFile[] = [];
+                for (const file of finalResults) {
+                    try {
+                        const draftUrl = await applyDraftModeProcessing(file.processedUrl);
+                        draftResults.push({ ...file, processedUrl: draftUrl });
+                    } catch (err) {
+                        console.error("Draft mode processing failed for", file.originalName, err);
+                        draftResults.push(file);
+                    }
+                    setProcessedFiles([...draftResults, ...finalResults.slice(draftResults.length)]);
+                    await yieldToMain();
+                }
+                finalResults = draftResults;
+            }
+
             // Clear timers and snap to 100%
             clearInterval(progressTimer);
             setProcessingProgress(100);
             
-            // Deduct credits after successful processing
-            if (user && creditsNeeded > 0) {
+            // Deduct credits after successful processing (Draft mode is FREE)
+            if (user && creditsNeeded > 0 && !isDraftMode) {
                 const deducted = await deductCredits(creditsNeeded);
                 if (deducted) {
                     console.log(`✅ Deducted ${creditsNeeded} credits`);
@@ -998,7 +1020,7 @@ export default function App() {
     }, [
         uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, 
         isEnsembleCorrectionEnabled, isPerspectiveCorrectionEnabled, isAiEdgeFillEnabled,
-        isAiVariationsEnabled, numVariations, isSimpleMatchEnabled,
+        isAiVariationsEnabled, numVariations, isSimpleMatchEnabled, isDraftMode,
         aspectRatio, selectedSnippets, apiKey, contextImageFile, edgeFillResolution, projectContext, user
     ]);
     
@@ -1031,8 +1053,9 @@ export default function App() {
       return Math.ceil(total);
   }, [uploadedFiles.length, isAiEdgeFillEnabled, isAiVariationsEnabled, numVariations]);
 
-  // Calculate credits needed for display
+  // Calculate credits needed for display (Draft mode is FREE)
   const estimatedCreditsNeeded = useMemo(() => {
+      if (isDraftMode) return 0;
       const imageCount = uploadedFiles.filter(f => f.id !== masterFileId).length;
       const edgeFillMode: 'none' | 'standard' | 'premium' | 'ultra' = !isAiEdgeFillEnabled 
         ? 'none' 
@@ -1041,7 +1064,7 @@ export default function App() {
         : 'standard';
       const aiVariationCount = isAiVariationsEnabled ? numVariations : 0;
       return calculateCreditsNeeded(imageCount, edgeFillMode, aiVariationCount);
-  }, [uploadedFiles, masterFileId, isAiEdgeFillEnabled, edgeFillResolution, isAiVariationsEnabled, numVariations]);
+  }, [uploadedFiles, masterFileId, isAiEdgeFillEnabled, edgeFillResolution, isAiVariationsEnabled, numVariations, isDraftMode]);
 
   const formattedEstimatedTime = formatTime(totalEstimatedTime);
 
@@ -1179,17 +1202,17 @@ export default function App() {
             ) : (
                 <div className="w-full flex flex-col lg:flex-row gap-8 items-start h-full">
                     {/* LEFT SIDEBAR - Settings (Always Visible) */}
-                    <div className="w-full lg:w-[360px] flex-shrink-0 flex flex-col gap-6 p-6 bg-gray-800/40 rounded-xl border border-gray-700/50 sticky top-6 backdrop-blur-sm">
+                    <div className="w-full lg:w-[420px] flex-shrink-0 flex flex-col gap-6 p-6 bg-gray-800/40 rounded-xl border border-gray-700/50 sticky top-6 backdrop-blur-sm">
                         <h2 className="text-xl font-bold text-white mb-2">Settings</h2>
                         
                         {/* Settings Sections */}
-                        <StabilitySlider value={stabilityLevel} onChange={setStabilityLevel} />
-                        
-                        <div className="h-px bg-gray-700/50" />
+                        {/* StabilitySlider hidden for now */}
+                        {/* <StabilitySlider value={stabilityLevel} onChange={setStabilityLevel} /> */}
+                        {/* <div className="h-px bg-gray-700/50" /> */}
                         
                         <EdgeFillSelector 
-                            value={isAiEdgeFillEnabled ? 'pro' : 'fast'} 
-                            onChange={(val) => setIsAiEdgeFillEnabled(val === 'pro')}
+                            value={processingMode} 
+                            onChange={setProcessingMode}
                             resolution={edgeFillResolution}
                             onResolutionChange={setEdgeFillResolution}
                             imageCount={uploadedFiles.length}
@@ -1199,8 +1222,8 @@ export default function App() {
                         
                         <AspectRatioSelector selectedRatio={aspectRatio} onSelectRatio={setAspectRatio} />
                         
-                        {/* AI Variations Section */}
-                        <div className="pt-2">
+                        {/* AI Variations Section - hidden for now */}
+                        {/* <div className="pt-2">
                             <AIVariationsToggle isChecked={isAiVariationsEnabled} onChange={setIsAiVariationsEnabled} />
                             
                             {isAiVariationsEnabled && (
@@ -1222,7 +1245,6 @@ export default function App() {
                                         onChange={setProjectContext} 
                                         isDisabled={!isAiVariationsEnabled}
                                     />
-                                    {/* API Key Input */}
                                     <div className="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
                                         <label htmlFor="api-key-input" className="text-xs text-gray-400 font-medium block mb-1.5">Google AI API Key</label>
                                         <input 
@@ -1236,7 +1258,7 @@ export default function App() {
                                     </div>
                                 </div>
                             )}
-                        </div>
+                        </div> */}
                         
                         {/* Main Action Button */}
                         {processedFiles.length > 0 ? (
@@ -1247,6 +1269,18 @@ export default function App() {
                               Start All Over
                               <span className="block text-xs font-normal opacity-80 mt-1">
                                  Reset to upload new files
+                              </span>
+                           </button>
+                        ) : !user && !isDraftMode ? (
+                           // Not logged in and not in Draft mode - show Sign in button
+                           <button
+                              onClick={() => setAuthModalOpen(true)}
+                              disabled={!masterFileId}
+                              className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg hover:shadow-purple-500/20 hover:from-purple-500 hover:to-pink-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+                           >
+                              Sign in & Generate
+                              <span className="block text-xs font-normal opacity-80 mt-1">
+                                 Login required for {processingMode === 'pro' ? 'Pro' : 'Fast'} mode
                               </span>
                            </button>
                         ) : (
@@ -1260,6 +1294,9 @@ export default function App() {
                                  Est. time: ~{formattedEstimatedTime}
                                  {user && estimatedCreditsNeeded > 0 && (
                                    <span className="ml-2 text-yellow-300">• ⚡{estimatedCreditsNeeded} credits</span>
+                                 )}
+                                 {isDraftMode && !user && (
+                                   <span className="ml-2 text-yellow-300">• FREE (Draft)</span>
                                  )}
                               </span>
                            </button>

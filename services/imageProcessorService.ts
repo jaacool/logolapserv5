@@ -1595,3 +1595,122 @@ export const refineWithGoldenTemplate = async (
         mats.forEach(mat => { if (mat && mat.delete && !mat.isDeleted()) mat.delete(); });
     }
 };
+
+/**
+ * Apply LogoLapse watermark pattern across the entire image
+ * Creates a diagonal pattern of semi-transparent watermarks
+ */
+export const applyWatermark = async (imageDataUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('Could not get canvas context'));
+                return;
+            }
+
+            // Draw original image
+            ctx.drawImage(img, 0, 0);
+
+            // Watermark settings
+            const watermarkText = 'LOGOLAPSER';
+            const fontSize = Math.max(16, Math.min(img.width, img.height) / 12);
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.lineWidth = 1;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Calculate spacing for diagonal pattern
+            const textWidth = ctx.measureText(watermarkText).width;
+            const spacingX = textWidth * 1.5;
+            const spacingY = fontSize * 3;
+
+            // Rotate canvas for diagonal watermarks
+            ctx.save();
+            ctx.rotate(-30 * Math.PI / 180);
+
+            // Calculate extended bounds for rotated canvas
+            const diagonal = Math.sqrt(img.width * img.width + img.height * img.height);
+            const startX = -diagonal / 2;
+            const startY = -diagonal / 2;
+            const endX = diagonal * 1.5;
+            const endY = diagonal * 1.5;
+
+            // Draw watermark pattern
+            for (let y = startY; y < endY; y += spacingY) {
+                for (let x = startX; x < endX; x += spacingX) {
+                    // Offset every other row
+                    const offsetX = (Math.floor(y / spacingY) % 2) * (spacingX / 2);
+                    ctx.strokeText(watermarkText, x + offsetX, y);
+                    ctx.fillText(watermarkText, x + offsetX, y);
+                }
+            }
+
+            ctx.restore();
+            resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => reject(new Error('Failed to load image for watermarking'));
+        img.src = imageDataUrl;
+    });
+};
+
+/**
+ * Downscale image to 240p (426x240 for 16:9 or proportional)
+ * Maintains aspect ratio, max dimension is 426px wide or 240px tall
+ */
+export const downscaleTo360p = async (imageDataUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const maxWidth = 240;
+            const maxHeight = 240;
+            
+            let newWidth = img.width;
+            let newHeight = img.height;
+            
+            // Calculate new dimensions maintaining aspect ratio
+            if (img.width > maxWidth || img.height > maxHeight) {
+                const widthRatio = maxWidth / img.width;
+                const heightRatio = maxHeight / img.height;
+                const ratio = Math.min(widthRatio, heightRatio);
+                newWidth = Math.round(img.width * ratio);
+                newHeight = Math.round(img.height * ratio);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('Could not get canvas context'));
+                return;
+            }
+
+            // Use high-quality downscaling
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+            resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => reject(new Error('Failed to load image for downscaling'));
+        img.src = imageDataUrl;
+    });
+};
+
+/**
+ * Apply Draft mode processing: Downscale to 360p and add watermarks
+ */
+export const applyDraftModeProcessing = async (imageDataUrl: string): Promise<string> => {
+    // First downscale to 360p
+    const downscaled = await downscaleTo360p(imageDataUrl);
+    // Then apply watermark
+    const watermarked = await applyWatermark(downscaled);
+    return watermarked;
+};
