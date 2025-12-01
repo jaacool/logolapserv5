@@ -82,6 +82,7 @@ serve(async (req) => {
     const userId = session.metadata?.userId;
     const packageId = session.metadata?.packageId;
     const credits = parseInt(session.metadata?.credits || '0', 10);
+    const referralCodeId = session.metadata?.referralCodeId || null;
 
     console.log('Processing payment:', { userId, packageId, credits });
 
@@ -116,6 +117,33 @@ serve(async (req) => {
         }
 
         console.log(`Added ${credits} credits to user ${userId}. New balance: ${data}`);
+
+        // Process referral if a code was used
+        if (referralCodeId) {
+          try {
+            const { data: referralResult, error: referralError } = await supabase.rpc('process_referral', {
+              p_referral_code_id: referralCodeId,
+              p_referred_user_id: userId,
+              p_package_id: packageId,
+              p_credits_purchased: credits,
+              p_payment_id: session.id,
+            });
+
+            if (referralError) {
+              console.error('Error processing referral:', referralError);
+            } else if (referralResult && referralResult[0]) {
+              const result = referralResult[0];
+              if (result.success) {
+                console.log(`Referral processed: ${result.bonus_credits} bonus to new user, ${result.referrer_credits} to referrer`);
+              } else {
+                console.warn('Referral processing failed:', result.error_message);
+              }
+            }
+          } catch (refErr) {
+            console.error('Referral processing error:', refErr);
+            // Don't fail the webhook if referral processing fails
+          }
+        }
 
         // Create invoice for this purchase
         try {

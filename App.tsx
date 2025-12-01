@@ -8,6 +8,7 @@ import { UserMenu } from './components/UserMenu';
 import { CreditShop } from './components/CreditShop';
 import { InsufficientCreditsModal } from './components/InsufficientCreditsModal';
 import { InvoiceModal } from './components/InvoiceModal';
+import { ReferralModal } from './components/ReferralModal';
 import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistortion, detectLuminanceInversion, invertImage, createInvertedMasterImage, applyDraftModeProcessing } from './services/imageProcessorService';
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
@@ -106,6 +107,7 @@ export default function App() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [creditShopOpen, setCreditShopOpen] = useState(false);
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [referralModalOpen, setReferralModalOpen] = useState(false);
   const [insufficientCreditsModal, setInsufficientCreditsModal] = useState<{
     isOpen: boolean;
     creditsNeeded: number;
@@ -1144,6 +1146,7 @@ export default function App() {
                 credits={credits} 
                 onBuyCredits={() => setCreditShopOpen(true)} 
                 onShowInvoices={() => setInvoiceModalOpen(true)}
+                onShowReferrals={() => setReferralModalOpen(true)}
               />
             ) : (
               <div className="flex items-center gap-2">
@@ -1203,6 +1206,13 @@ export default function App() {
           userEmail={user.email}
         />
       )}
+      
+      {/* Referral Modal */}
+      <ReferralModal
+        isOpen={referralModalOpen}
+        onClose={() => setReferralModalOpen(false)}
+        userId={user?.uid}
+      />
 
       <main className="w-full max-w-[1800px] mx-auto flex-grow flex flex-col items-center justify-center h-full">
         {error && (

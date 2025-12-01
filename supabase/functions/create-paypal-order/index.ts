@@ -33,7 +33,7 @@ serve(async (req) => {
   }
 
   try {
-    const { packageId, userId, amount, credits, packageName } = await req.json();
+    const { packageId, userId, amount, credits, packageName, referralCodeId } = await req.json();
 
     if (!packageId || !userId || !amount || !credits) {
       return new Response(
@@ -59,7 +59,7 @@ serve(async (req) => {
               value: amount,
             },
             description: `${packageName} - ${credits} Credits for LogoLapser`,
-            custom_id: JSON.stringify({ userId, packageId, credits }),
+            custom_id: JSON.stringify({ userId, packageId, credits, referralCodeId: referralCodeId || null }),
           },
         ],
         application_context: {

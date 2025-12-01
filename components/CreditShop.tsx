@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { XIcon } from './Icons';
 import { CREDIT_PACKAGES, CreditPackage } from '../types/credits';
 import { createStripeCheckout, createPayPalOrder, capturePayPalOrder } from '../services/paymentService';
+import { 
+  validateReferralCode, 
+  canUseReferralCode, 
+  calculateReferralBonus,
+  REFERRAL_BONUS_PERCENT 
+} from '../services/referralService';
 
 type PaymentMethod = 'stripe' | 'paypal';
 
@@ -16,6 +22,59 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [processingMethod, setProcessingMethod] = useState<PaymentMethod | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Referral code state
+  const [referralCode, setReferralCode] = useState<string>('');
+  const [referralCodeId, setReferralCodeId] = useState<string | null>(null);
+  const [referralValidating, setReferralValidating] = useState(false);
+  const [referralValid, setReferralValid] = useState<boolean | null>(null);
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [canUseReferral, setCanUseReferral] = useState<boolean>(true);
+
+  // Check if user can use referral codes on mount
+  useEffect(() => {
+    const checkReferralEligibility = async () => {
+      if (userId) {
+        const canUse = await canUseReferralCode();
+        setCanUseReferral(canUse);
+      }
+    };
+    if (isOpen) {
+      checkReferralEligibility();
+    }
+  }, [isOpen, userId]);
+
+  // Check for referral code in URL on mount
+  useEffect(() => {
+    if (isOpen && canUseReferral) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      if (refCode) {
+        setReferralCode(refCode);
+        handleValidateReferralCode(refCode);
+      }
+    }
+  }, [isOpen, canUseReferral]);
+
+  const handleValidateReferralCode = async (code?: string) => {
+    const codeToValidate = code || referralCode;
+    if (!codeToValidate.trim()) {
+      setReferralValid(null);
+      setReferralCodeId(null);
+      setReferralError(null);
+      return;
+    }
+
+    setReferralValidating(true);
+    setReferralError(null);
+
+    const result = await validateReferralCode(codeToValidate);
+    
+    setReferralValidating(false);
+    setReferralValid(result.isValid);
+    setReferralCodeId(result.referralCodeId);
+    setReferralError(result.errorMessage);
+  };
 
   if (!isOpen) return null;
 
@@ -29,8 +88,11 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
     setError(null);
 
     try {
+      // Pass referral code ID if valid
+      const refCodeId = referralValid ? referralCodeId : null;
+      
       if (method === 'stripe') {
-        const result = await createStripeCheckout(selectedPackage, userId);
+        const result = await createStripeCheckout(selectedPackage, userId, refCodeId);
         if ('error' in result) {
           setError(result.error);
         } else {
@@ -38,7 +100,7 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
           window.location.href = result.sessionUrl;
         }
       } else if (method === 'paypal') {
-        const result = await createPayPalOrder(selectedPackage, userId);
+        const result = await createPayPalOrder(selectedPackage, userId, refCodeId);
         if ('error' in result) {
           setError(result.error);
         } else if (result.approvalUrl) {
@@ -55,6 +117,10 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
       setProcessingMethod(null);
     }
   };
+
+  // Calculate bonus credits for selected package
+  const selectedPkg = CREDIT_PACKAGES.find(p => p.id === selectedPackage);
+  const bonusCredits = selectedPkg && referralValid ? calculateReferralBonus(selectedPkg.credits) : 0;
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -100,6 +166,68 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
               />
             ))}
           </div>
+
+          {/* Referral Code Section */}
+          {canUseReferral && (
+            <div className="mt-6 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🎁</span>
+                <span className="text-sm font-medium text-white">Have a referral code?</span>
+                <span className="text-xs text-purple-300">Get {REFERRAL_BONUS_PERCENT}% bonus credits!</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={referralCode}
+                  onChange={(e) => {
+                    setReferralCode(e.target.value.toUpperCase());
+                    setReferralValid(null);
+                    setReferralError(null);
+                  }}
+                  placeholder="Enter code (e.g., REF-JOHN-ABC123)"
+                  className={`flex-1 px-4 py-2 bg-gray-700 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all
+                    ${referralValid === true ? 'border-green-500 focus:ring-green-500' : 
+                      referralValid === false ? 'border-red-500 focus:ring-red-500' : 
+                      'border-gray-600 focus:ring-purple-500'}`}
+                />
+                <button
+                  onClick={() => handleValidateReferralCode()}
+                  disabled={referralValidating || !referralCode.trim()}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {referralValidating ? '...' : 'Apply'}
+                </button>
+              </div>
+              {referralValid === true && (
+                <div className="mt-2 flex items-center gap-2 text-green-400 text-sm">
+                  <span>✓</span>
+                  <span>Code applied! You'll get +{REFERRAL_BONUS_PERCENT}% bonus credits</span>
+                  {selectedPkg && (
+                    <span className="text-green-300 font-bold">(+{bonusCredits} credits)</span>
+                  )}
+                </div>
+              )}
+              {referralError && (
+                <div className="mt-2 text-red-400 text-sm">
+                  ✗ {referralError}
+                </div>
+              )}
+              {selectedPkg && referralValid && (
+                <div className="mt-3 bg-green-500/20 border border-green-500/30 rounded-lg p-3 text-center">
+                  <span className="text-green-400 font-medium">
+                    Total: {selectedPkg.credits} + {bonusCredits} = <span className="text-lg font-bold">{selectedPkg.credits + bonusCredits}</span> credits
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Already used referral message */}
+          {!canUseReferral && (
+            <div className="mt-6 bg-gray-700/30 border border-gray-600 rounded-xl p-4 text-center">
+              <span className="text-gray-400 text-sm">You've already used a referral code on a previous purchase.</span>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (

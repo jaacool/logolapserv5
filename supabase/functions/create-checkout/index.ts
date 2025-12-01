@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { packageId, userId, priceInCents, credits, packageName } = await req.json();
+    const { packageId, userId, priceInCents, credits, packageName, referralCodeId } = await req.json();
 
     if (!packageId || !userId || !priceInCents || !credits) {
       return new Response(
@@ -53,6 +53,7 @@ serve(async (req) => {
         userId,
         packageId,
         credits: credits.toString(),
+        referralCodeId: referralCodeId || '',
       },
     });
 

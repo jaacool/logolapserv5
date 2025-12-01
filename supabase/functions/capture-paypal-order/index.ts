@@ -96,7 +96,7 @@ serve(async (req) => {
     const customId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.custom_id 
       || captureData.purchase_units?.[0]?.custom_id;
     
-    let orderData = { userId: '', packageId: 'unknown', credits: 0 };
+    let orderData = { userId: '', packageId: 'unknown', credits: 0, referralCodeId: null as string | null };
     try {
       orderData = JSON.parse(customId);
     } catch (e) {
@@ -127,6 +127,33 @@ serve(async (req) => {
       }
 
       console.log(`Added ${credits} credits to user ${finalUserId}. New balance: ${data}`);
+
+      // Process referral if a code was used
+      if (orderData.referralCodeId) {
+        try {
+          const { data: referralResult, error: referralError } = await supabase.rpc('process_referral', {
+            p_referral_code_id: orderData.referralCodeId,
+            p_referred_user_id: finalUserId,
+            p_package_id: orderData.packageId,
+            p_credits_purchased: credits,
+            p_payment_id: orderId,
+          });
+
+          if (referralError) {
+            console.error('Error processing referral:', referralError);
+          } else if (referralResult && referralResult[0]) {
+            const result = referralResult[0];
+            if (result.success) {
+              console.log(`Referral processed: ${result.bonus_credits} bonus to new user, ${result.referrer_credits} to referrer`);
+            } else {
+              console.warn('Referral processing failed:', result.error_message);
+            }
+          }
+        } catch (refErr) {
+          console.error('Referral processing error:', refErr);
+          // Don't fail the payment if referral processing fails
+        }
+      }
 
       // Create invoice for this purchase
       try {

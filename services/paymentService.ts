@@ -27,7 +27,8 @@ export interface PaymentResult {
  */
 export const createStripeCheckout = async (
   packageId: string,
-  userId: string
+  userId: string,
+  referralCodeId?: string | null
 ): Promise<{ sessionUrl: string } | { error: string }> => {
   const pkg = CREDIT_PACKAGES.find(p => p.id === packageId);
   if (!pkg) {
@@ -47,6 +48,7 @@ export const createStripeCheckout = async (
         priceInCents: Math.round(pkg.priceGross * 100),
         credits: pkg.credits,
         packageName: pkg.name,
+        referralCodeId: referralCodeId || null,
       },
     });
 
@@ -67,7 +69,8 @@ export const createStripeCheckout = async (
  */
 export const createPayPalOrder = async (
   packageId: string,
-  userId: string
+  userId: string,
+  referralCodeId?: string | null
 ): Promise<{ orderId: string; approvalUrl: string } | { error: string }> => {
   const pkg = CREDIT_PACKAGES.find(p => p.id === packageId);
   if (!pkg) {
@@ -86,6 +89,7 @@ export const createPayPalOrder = async (
         amount: pkg.priceGross.toFixed(2),
         credits: pkg.credits,
         packageName: pkg.name,
+        referralCodeId: referralCodeId || null,
       },
     });
 

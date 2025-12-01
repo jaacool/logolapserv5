@@ -8,9 +8,10 @@ interface UserMenuProps {
   credits: number;
   onBuyCredits?: () => void;
   onShowInvoices?: () => void;
+  onShowReferrals?: () => void;
 }
 
-export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits, onShowInvoices }) => {
+export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits, onShowInvoices, onShowReferrals }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +109,14 @@ export const UserMenu: React.FC<UserMenuProps> = ({ user, credits, onBuyCredits,
                 className="w-full text-left px-4 py-2 text-yellow-400 hover:bg-yellow-500/20 rounded-lg transition-colors flex items-center gap-2"
               >
                 <span>⚡</span> Buy Credits
+              </button>
+            )}
+            {onShowReferrals && (
+              <button
+                onClick={() => { setIsOpen(false); onShowReferrals(); }}
+                className="w-full text-left px-4 py-2 text-purple-400 hover:bg-purple-500/20 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <span>🎁</span> Referral Program
               </button>
             )}
             {onShowInvoices && (
