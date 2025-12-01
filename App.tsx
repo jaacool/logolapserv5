@@ -522,20 +522,7 @@ export default function App() {
         setError(null);
 
         try {
-            let filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution, aspectRatio);
-            
-            // Apply Ensemble Correction after Edge Fill to fix any AI-induced changes
-            const masterFile = processedFiles.find(f => f.id === masterFileId);
-            if (masterFile && fileId !== masterFileId) {
-                try {
-                    console.log(`Applying ensemble correction after Edge Fill retry for ${file.originalName}...`);
-                    const goldenTemplateElement = await dataUrlToImageElement(masterFile.processedUrl);
-                    filledUrl = await refineWithGoldenTemplate(filledUrl, goldenTemplateElement, true);
-                } catch (err) {
-                    console.error("Ensemble correction after retry failed:", err);
-                    // Continue with the filled URL even if ensemble fails
-                }
-            }
+            const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution, aspectRatio);
             
             // Deduct credits ONLY after successful processing
             if (user) {
@@ -558,7 +545,7 @@ export default function App() {
                 return newSet;
             });
         }
-    }, [processedFiles, edgeFillResolution, aspectRatio, user, getEdgeFillCreditCost, masterFileId]);
+    }, [processedFiles, edgeFillResolution, aspectRatio, user, getEdgeFillCreditCost]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
@@ -736,7 +723,7 @@ export default function App() {
             if (hasSimpleMatchFiles) totalStages++;
             if (hasPerspectiveFiles) totalStages++;
             if (willRunEnsemble) totalStages++; // Now includes separate ensemble for normal AND inverted
-            if (willRunEdgeFill) totalStages += 2; // Edge Fill + Post-Edge Fill Correction
+            if (willRunEdgeFill) totalStages++;
             if (willRunAI) totalStages++;
 
             let currentStage = 1;
@@ -951,34 +938,6 @@ export default function App() {
                 const filledResults = await Promise.all(fillPromises);
                 stage4Results = filledResults.map(({ success, ...file }) => file);
                 setProcessedFiles(stage4Results);
-
-                // Apply Ensemble Correction after Edge Fill to fix any AI-induced changes
-                currentStage++;
-                setProcessingStatus(`Stage ${currentStage}/${totalStages}: Applying post-Edge Fill correction...`);
-                await yieldToMain();
-
-                const masterResult = stage4Results.find(f => f.id === masterFileId);
-                if (masterResult) {
-                    const goldenTemplateElement = await dataUrlToImageElement(masterResult.processedUrl);
-                    const correctedResults: ProcessedFile[] = [];
-                    
-                    for (const file of stage4Results) {
-                        if (file.id === masterFileId) {
-                            correctedResults.push(file);
-                        } else {
-                            try {
-                                console.log(`Applying post-Edge Fill correction to ${file.originalName}...`);
-                                const correctedUrl = await refineWithGoldenTemplate(file.processedUrl, goldenTemplateElement, true);
-                                correctedResults.push({ ...file, processedUrl: correctedUrl });
-                            } catch (err) {
-                                console.error("Post-Edge Fill correction failed:", file.originalName, err);
-                                correctedResults.push(file); // Keep original if correction fails
-                            }
-                        }
-                    }
-                    stage4Results = correctedResults;
-                    setProcessedFiles(stage4Results);
-                }
             }
 
             let finalResults = stage4Results;
