@@ -24,6 +24,7 @@ interface PreviewerProps {
   onRetryEdgeFill?: (id: string) => void;
   retryingEdgeFillIds?: Set<string>;
   edgeFillCreditCost?: number;
+  isEdgeFillEnabled?: boolean;
 }
 
 export const Previewer: React.FC<PreviewerProps> = ({ 
@@ -45,7 +46,8 @@ export const Previewer: React.FC<PreviewerProps> = ({
     processingProgress,
     onRetryEdgeFill,
     retryingEdgeFillIds = new Set(),
-    edgeFillCreditCost = 6
+    edgeFillCreditCost = 6,
+    isEdgeFillEnabled = false
 }) => {
   const [viewMode, setViewMode] = useState<'grid' | 'single'>('single');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -321,7 +323,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
                             onClick={() => onPerspectiveFix(file.id)}
                             disabled={!!fixingImageId}
                             className="absolute bottom-1 left-1 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-blue-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Re-run with Perspective Fix"
+                            title={isEdgeFillEnabled ? `Re-run with Perspective Fix (⚡${edgeFillCreditCost} credits)` : "Re-run with Perspective Fix"}
                         >
                             <PerspectiveIcon className="w-5 h-5" />
                         </button>
@@ -329,7 +331,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
                             onClick={() => onSimpleMatchFix(file.id)}
                             disabled={!!fixingImageId}
                             className="absolute bottom-1 left-12 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-green-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Re-run with Simple Match (Rotation/Scale Only)"
+                            title={isEdgeFillEnabled ? `Re-run with Simple Match (⚡${edgeFillCreditCost} credits)` : "Re-run with Simple Match (Rotation/Scale Only)"}
                         >
                             <SimpleMatchIcon className="w-5 h-5" />
                         </button>

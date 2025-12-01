@@ -283,34 +283,19 @@ export default function App() {
         .map(async (file) => {
           const imageElement = await fileToImageElement(file);
           
-          // Automatic perspective detection
-          let needsPerspective = true;
-          let needsSimple = false;
-          
-          if (cvReady) {
-            try {
-              needsPerspective = detectPerspectiveDistortion(imageElement);
-              needsSimple = !needsPerspective; // If no perspective needed, use simple match
-              console.log(`Auto-detected ${file.name}: ${needsPerspective ? 'PERSPECTIVE' : 'FRONTAL/SIMPLE'}`);
-            } catch (err) {
-              console.warn('Auto-detection failed, defaulting to perspective:', err);
-              needsPerspective = true;
-              needsSimple = false;
-            }
-          }
-          
+          // Default to perspective correction (automatic detection disabled)
           return {
             id: `${file.name}-${file.lastModified}`,
             file,
             previewUrl: imageElement.src,
             imageElement: imageElement,
-            needsPerspectiveCorrection: needsPerspective,
-            needsSimpleMatch: needsSimple,
+            needsPerspectiveCorrection: true,
+            needsSimpleMatch: false,
           };
         })
     );
     setUploadedFiles(prev => [...prev, ...newFiles]);
-  }, [cvReady]);
+  }, []);
 
   const handleToggleSimpleMatch = useCallback((fileId: string) => {
     setUploadedFiles(prevFiles => 
@@ -418,6 +403,14 @@ export default function App() {
             if (isAiEdgeFillEnabled) {
                 try {
                     processedUrl = await processWithNanobanana(processedUrl, edgeFillResolution, aspectRatio);
+                    
+                    // Deduct credits after successful Edge Fill
+                    if (user) {
+                        const creditCost = edgeFillResolution >= 4096 ? 12 : edgeFillResolution > 1024 ? 9 : 6;
+                        await deductCredits(creditCost);
+                        const newCredits = await getCredits();
+                        setCredits(newCredits);
+                    }
                 } catch (fillErr) {
                      console.error("AI Edge Fill failed during fix:", fillErr);
                      setError(`Edge Fill failed: ${(fillErr as Error).message}`);
@@ -432,7 +425,7 @@ export default function App() {
         } finally {
             setFixingImageId(null);
         }
-    }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio, isAiEdgeFillEnabled]);
+    }, [masterFileId, uploadedFiles, processedFiles, isGreedyMode, isRefinementEnabled, aspectRatio, isAiEdgeFillEnabled, edgeFillResolution, user]);
 
     const handleSimpleMatchFix = useCallback(async (fileId: string) => {
         const targetFile = uploadedFiles.find(f => f.id === fileId);
@@ -479,6 +472,14 @@ export default function App() {
             if (isAiEdgeFillEnabled) {
                 try {
                     processedUrl = await processWithNanobanana(processedUrl, edgeFillResolution, aspectRatio);
+                    
+                    // Deduct credits after successful Edge Fill
+                    if (user) {
+                        const creditCost = edgeFillResolution >= 4096 ? 12 : edgeFillResolution > 1024 ? 9 : 6;
+                        await deductCredits(creditCost);
+                        const newCredits = await getCredits();
+                        setCredits(newCredits);
+                    }
                 } catch (fillErr) {
                      console.error("AI Edge Fill failed during fix:", fillErr);
                      setError(`Edge Fill failed: ${(fillErr as Error).message}`);
@@ -493,7 +494,7 @@ export default function App() {
         } finally {
             setFixingImageId(null);
         }
-    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio, isAiEdgeFillEnabled]);
+    }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio, isAiEdgeFillEnabled, edgeFillResolution, user]);
 
     // Calculate credit cost for single edge fill based on resolution
     const getEdgeFillCreditCost = useCallback(() => {
@@ -1348,6 +1349,7 @@ export default function App() {
                                 onRetryEdgeFill={isAiEdgeFillEnabled ? handleRetryEdgeFill : undefined}
                                 retryingEdgeFillIds={retryingEdgeFillIds}
                                 edgeFillCreditCost={getEdgeFillCreditCost()}
+                                isEdgeFillEnabled={isAiEdgeFillEnabled}
                             />
                         ) : (
                             <ImageGrid 
