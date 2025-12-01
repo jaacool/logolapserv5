@@ -170,10 +170,16 @@ export const CreditShop: React.FC<CreditShopProps> = ({ isOpen, onClose, onPurch
           {/* Referral Code Section */}
           {canUseReferral && (
             <div className="mt-6 bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg">🎁</span>
-                <span className="text-sm font-medium text-white">Have a referral code?</span>
-                <span className="text-xs text-purple-300">Get {REFERRAL_BONUS_PERCENT}% bonus credits!</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🎁</span>
+                  <span className="text-sm font-medium text-white">Have a referral code?</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-purple-300">Up to <span className="text-pink-400 font-bold">+200 free credits</span></span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-green-400">(save up to €10)</span>
+                </div>
               </div>
               <div className="flex gap-2">
                 <input
