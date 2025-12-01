@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { ProcessedFile, UploadedFile, AspectRatio } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, GridIcon, SingleViewIcon, PlayIcon, PauseIcon, XIcon, PerspectiveIcon, SimpleMatchIcon, DownloadIcon } from './Icons';
+import { ChevronLeftIcon, ChevronRightIcon, GridIcon, SingleViewIcon, PlayIcon, PauseIcon, XIcon, PerspectiveIcon, SimpleMatchIcon, DownloadIcon, RefreshIcon } from './Icons';
 import { DebugToggle } from './DebugToggle';
 import { Spinner } from './Spinner';
 
@@ -21,6 +21,9 @@ interface PreviewerProps {
   isProcessing?: boolean;
   processingStatus?: string;
   processingProgress?: number;
+  onRetryEdgeFill?: (id: string) => void;
+  retryingEdgeFillId?: string | null;
+  edgeFillCreditCost?: number;
 }
 
 export const Previewer: React.FC<PreviewerProps> = ({ 
@@ -39,7 +42,10 @@ export const Previewer: React.FC<PreviewerProps> = ({
     isExporting,
     isProcessing,
     processingStatus,
-    processingProgress
+    processingProgress,
+    onRetryEdgeFill,
+    retryingEdgeFillId,
+    edgeFillCreditCost = 1
 }) => {
   const [viewMode, setViewMode] = useState<'grid' | 'single'>('single');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -313,7 +319,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
                     <>
                         <button
                             onClick={() => onPerspectiveFix(file.id)}
-                            disabled={!!fixingImageId}
+                            disabled={!!fixingImageId || !!retryingEdgeFillId}
                             className="absolute bottom-1 left-1 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-blue-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Re-run with Perspective Fix"
                         >
@@ -321,13 +327,27 @@ export const Previewer: React.FC<PreviewerProps> = ({
                         </button>
                         <button
                             onClick={() => onSimpleMatchFix(file.id)}
-                            disabled={!!fixingImageId}
+                            disabled={!!fixingImageId || !!retryingEdgeFillId}
                             className="absolute bottom-1 left-12 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-green-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Re-run with Simple Match (Rotation/Scale Only)"
                         >
                             <SimpleMatchIcon className="w-5 h-5" />
                         </button>
                     </>
+                )}
+                {onRetryEdgeFill && (
+                    <button
+                        onClick={() => onRetryEdgeFill(file.id)}
+                        disabled={!!fixingImageId || !!retryingEdgeFillId}
+                        className={`absolute bottom-1 right-1 p-1.5 rounded-full bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-purple-600 hover:text-white transition-all duration-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed ${retryingEdgeFillId === file.id ? 'opacity-100 bg-purple-600 animate-pulse' : ''}`}
+                        title={`Retry AI Edge Fill (⚡${edgeFillCreditCost} credit${edgeFillCreditCost !== 1 ? 's' : ''})`}
+                    >
+                        {retryingEdgeFillId === file.id ? (
+                            <Spinner className="w-5 h-5" />
+                        ) : (
+                            <RefreshIcon className="w-5 h-5" />
+                        )}
+                    </button>
                 )}
                 <img src={imageUrl} alt={file.originalName} className="w-full h-full object-contain bg-gray-800" />
                 

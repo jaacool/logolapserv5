@@ -25,8 +25,19 @@ export const processWithNanobanana = async (
     const resizedImageUrl = await resizeImage(imageUrl, resolution, resolution);
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
 
-    // Prompt designed to encourage outpainting/filling of black borders while preserving logo exactly
-    const prompt = "CRITICAL: Do NOT modify, resize, rotate, or reposition the logo/central object in ANY way. Keep the logo EXACTLY as it is - same size, same position, same rotation, same proportions. ONLY fill the black/empty border areas around the edges. Seamlessly extend the background texture and lighting into these black regions. The central content must remain pixel-perfect unchanged.";
+    // Prompt designed for seamless edge fill while preserving logo structure
+    const prompt = `TASK: Seamlessly fill the black/empty border areas around the edges of this image.
+
+CRITICAL RULES:
+1. Do NOT resize, rotate, reposition, or structurally modify the central logo/object
+2. The logo must stay the EXACT same size and position
+3. You MAY enhance quality (sharpen, improve resolution, remove watermarks) but NOT change composition
+4. Fill borders by SEAMLESSLY extending the background - NO visible edges or seams between original and filled areas
+5. The transition from original content to filled areas must be completely smooth and invisible
+6. Match the lighting, texture, color, and style of the existing background perfectly
+7. The final image must look like ONE cohesive image - no "picture in picture" effect
+
+OUTPUT: A clean, seamless image where the filled borders are indistinguishable from the original background.`;
 
     try {
         const response = await ai.models.generateContent({

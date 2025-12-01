@@ -69,6 +69,7 @@ export default function App() {
   const [processedFiles, setProcessedFiles] = useState<ProcessedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [retryingEdgeFillId, setRetryingEdgeFillId] = useState<string | null>(null);
   const [processingStatus, setProcessingStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState(0);
@@ -493,6 +494,52 @@ export default function App() {
             setFixingImageId(null);
         }
     }, [uploadedFiles, masterFileId, isGreedyMode, isRefinementEnabled, isEnsembleCorrectionEnabled, processedFiles, aspectRatio, isAiEdgeFillEnabled]);
+
+    // Calculate credit cost for single edge fill based on resolution
+    const getEdgeFillCreditCost = useCallback(() => {
+        if (edgeFillResolution >= 4096) return 3; // ultra
+        if (edgeFillResolution > 1024) return 2;  // premium
+        return 1; // standard
+    }, [edgeFillResolution]);
+
+    const handleRetryEdgeFill = useCallback(async (fileId: string) => {
+        const file = processedFiles.find(f => f.id === fileId);
+        if (!file) return;
+
+        const creditCost = getEdgeFillCreditCost();
+        
+        // Check if user has enough credits
+        if (user) {
+            const hasCredits = await hasEnoughCredits(creditCost);
+            if (!hasCredits) {
+                setInsufficientCreditsModal({ isOpen: true, creditsNeeded: creditCost });
+                return;
+            }
+        }
+
+        setRetryingEdgeFillId(fileId);
+        setError(null);
+
+        try {
+            const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution);
+            
+            // Deduct credits after successful processing
+            if (user) {
+                await deductCredits(creditCost);
+                const newCredits = await getCredits();
+                setCredits(newCredits);
+            }
+
+            setProcessedFiles(prev => prev.map(f => 
+                f.id === fileId ? { ...f, processedUrl: filledUrl } : f
+            ));
+        } catch (err) {
+            console.error("Retry Edge Fill failed:", err);
+            setError(`Edge Fill retry failed for ${file.originalName}: ${(err as Error).message}`);
+        } finally {
+            setRetryingEdgeFillId(null);
+        }
+    }, [processedFiles, edgeFillResolution, user, getEdgeFillCreditCost]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
@@ -1283,6 +1330,9 @@ export default function App() {
                                 fixingImageId={fixingImageId}
                                 onExport={handleExport}
                                 isExporting={isExporting}
+                                onRetryEdgeFill={isAiEdgeFillEnabled ? handleRetryEdgeFill : undefined}
+                                retryingEdgeFillId={retryingEdgeFillId}
+                                edgeFillCreditCost={getEdgeFillCreditCost()}
                             />
                         ) : (
                             <ImageGrid 
