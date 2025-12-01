@@ -502,8 +502,13 @@ export default function App() {
         return 6; // standard - CREDITS_PER_STANDARD_EDGE_FILL
     }, [edgeFillResolution]);
 
+    // Use ref to always get current processedFiles without re-creating the callback
+    const processedFilesRef = useRef(processedFiles);
+    processedFilesRef.current = processedFiles;
+
     const handleRetryEdgeFill = useCallback(async (fileId: string) => {
-        const file = processedFiles.find(f => f.id === fileId);
+        // Get current file from ref to ensure we have the latest version
+        const file = processedFilesRef.current.find(f => f.id === fileId);
         if (!file) return;
 
         const creditCost = getEdgeFillCreditCost();
@@ -522,7 +527,11 @@ export default function App() {
         setError(null);
 
         try {
-            const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution, aspectRatio);
+            // Get the CURRENT processedUrl from the ref (not from closure)
+            const currentFile = processedFilesRef.current.find(f => f.id === fileId);
+            if (!currentFile) throw new Error("File not found");
+            
+            const filledUrl = await processWithNanobanana(currentFile.processedUrl, edgeFillResolution, aspectRatio);
             
             // Deduct credits ONLY after successful processing
             if (user) {
@@ -545,7 +554,7 @@ export default function App() {
                 return newSet;
             });
         }
-    }, [processedFiles, edgeFillResolution, aspectRatio, user, getEdgeFillCreditCost]);
+    }, [edgeFillResolution, aspectRatio, user, getEdgeFillCreditCost]);
 
     const handleExport = useCallback(async () => {
         if (processedFiles.length === 0) return;
