@@ -30,7 +30,7 @@ export const processWithNanobanana = async (
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp-image-generation', 
+            model: 'gemini-2.5-flash-preview-05-20', 
             contents: {
                 parts: [
                     { text: prompt },
