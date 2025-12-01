@@ -417,7 +417,7 @@ export default function App() {
 
             if (isAiEdgeFillEnabled) {
                 try {
-                    processedUrl = await processWithNanobanana(processedUrl);
+                    processedUrl = await processWithNanobanana(processedUrl, edgeFillResolution, aspectRatio);
                 } catch (fillErr) {
                      console.error("AI Edge Fill failed during fix:", fillErr);
                      setError(`Edge Fill failed: ${(fillErr as Error).message}`);
@@ -478,7 +478,7 @@ export default function App() {
 
             if (isAiEdgeFillEnabled) {
                 try {
-                    processedUrl = await processWithNanobanana(processedUrl);
+                    processedUrl = await processWithNanobanana(processedUrl, edgeFillResolution, aspectRatio);
                 } catch (fillErr) {
                      console.error("AI Edge Fill failed during fix:", fillErr);
                      setError(`Edge Fill failed: ${(fillErr as Error).message}`);
@@ -522,9 +522,9 @@ export default function App() {
         setError(null);
 
         try {
-            const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution);
+            const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution, aspectRatio);
             
-            // Deduct credits after successful processing
+            // Deduct credits ONLY after successful processing
             if (user) {
                 await deductCredits(creditCost);
                 const newCredits = await getCredits();
@@ -926,7 +926,7 @@ export default function App() {
                 // Process all images in parallel
                 const fillPromises = stage4Results.map(async (file) => {
                     try {
-                        const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution);
+                        const filledUrl = await processWithNanobanana(file.processedUrl, edgeFillResolution, aspectRatio);
                         return { ...file, processedUrl: filledUrl, success: true };
                     } catch (fillErr) {
                         console.error("AI Edge Fill failed for", file.originalName, fillErr);

@@ -15,36 +15,56 @@ const getApiKey = (): string => {
 
 export const processWithNanobanana = async (
     imageUrl: string, 
-    resolution: number = 1024
+    resolution: number = 1024,
+    aspectRatio: '9:16' | '1:1' | '16:9' = '9:16'
 ): Promise<string> => {
     
     const apiKey = getApiKey();
     const ai = new GoogleGenAI({ apiKey });
 
-    // Resize to specified resolution
-    const resizedImageUrl = await resizeImage(imageUrl, resolution, resolution);
+    // Calculate dimensions based on aspect ratio
+    let width: number, height: number;
+    if (aspectRatio === '9:16') {
+        width = resolution;
+        height = Math.round(resolution * 16 / 9);
+    } else if (aspectRatio === '16:9') {
+        width = resolution;
+        height = Math.round(resolution * 9 / 16);
+    } else {
+        width = resolution;
+        height = resolution;
+    }
+
+    // Resize to specified resolution with correct aspect ratio
+    const resizedImageUrl = await resizeImage(imageUrl, width, height);
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
 
     // Prompt designed for seamless edge fill while preserving logo structure
-    const prompt = `TASK: Fill ALL black/empty/cropped border areas around the edges of this image with seamless background extension.
+    const prompt = `TASK: Create a complete ${aspectRatio} aspect ratio image by filling ALL empty/black/cropped areas with seamless background.
 
-ABSOLUTE REQUIREMENTS - NO EXCEPTIONS:
-1. ZERO BLACK EDGES: There must be NO black pixels, NO dark borders, NO empty areas remaining in the final image
-2. COMPLETE FILL: Every single edge and corner must be filled with appropriate background content
-3. NO CROPPING: Do not crop or cut off ANY part of the image - only ADD content to fill empty areas
+CRITICAL OUTPUT REQUIREMENTS:
+- Output MUST be ${aspectRatio} aspect ratio (${width}x${height} pixels)
+- The ENTIRE logo/object must be visible - NOTHING cut off or cropped
+- ALL edges must be filled with organic, seamless background - NO black pixels anywhere
 
-LOGO PRESERVATION:
-4. Do NOT resize, rotate, reposition, or structurally modify the central logo/object
-5. The logo must stay the EXACT same size and position
-6. You MAY enhance quality (sharpen, improve resolution, remove watermarks) but NOT change composition
+ABSOLUTE RULES:
+1. PRESERVE THE COMPLETE LOGO: Every part of the logo must remain fully visible. Do NOT crop, cut, or hide any portion
+2. ZERO BLACK/EMPTY AREAS: Fill every pixel with appropriate content - no black borders, no empty spaces
+3. SEAMLESS EXTENSION: Extend the background naturally in all directions to fill the ${aspectRatio} frame
+4. ORGANIC RESULT: The final image must look like a natural, complete photograph - not a composited image
 
-SEAMLESS BLENDING:
-7. Fill borders by SEAMLESSLY extending the background - NO visible edges or seams
-8. The transition from original content to filled areas must be completely smooth and invisible
-9. Match the lighting, texture, color, and style of the existing background perfectly
-10. The final image must look like ONE cohesive image - no "picture in picture" effect
+LOGO HANDLING:
+- Keep the logo at its EXACT current size and position
+- Do NOT resize, rotate, or move the logo
+- You MAY enhance quality (sharpen, improve resolution) but NOT alter composition
 
-OUTPUT: A complete image with NO black edges, where all borders are filled with seamlessly blended background content.`;
+BACKGROUND FILL:
+- Analyze the existing background texture, color, and lighting
+- Extend it seamlessly to fill all empty areas
+- Ensure smooth, invisible transitions between original and generated content
+- Create a cohesive, professional result
+
+OUTPUT: A complete ${aspectRatio} image where the full logo is visible and all surrounding areas are filled with seamlessly blended background.`;
 
     try {
         const response = await ai.models.generateContent({
