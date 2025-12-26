@@ -31,17 +31,21 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
   return (
     <div className="w-full">
       <div className="mb-6 space-y-2">
-        <p className="text-lg text-gray-300">
-          <span className="font-bold text-cyan-400">1.</span> Select a master
+        <p className="text-sm sm:text-base lg:text-lg text-gray-300 flex flex-wrap items-center gap-1 sm:gap-2">
+          <span className="font-bold text-cyan-400">1.</span> 
+          <span>Click on a picture to select it as</span>
+          <span className="px-1.5 border-2 border-cyan-400 text-cyan-400 rounded font-bold text-xs sm:text-sm lg:text-base">MASTER</span>
         </p>
-        <p className="text-sm text-gray-400 flex items-center gap-2">
+        <p className="text-sm sm:text-base lg:text-lg text-gray-300 flex flex-wrap items-center gap-1 sm:gap-2">
           <span className="font-bold text-cyan-400">2.</span> 
-          If the picture is taken frontal (without perspective shift) please click on the 
-          <span className="inline-flex items-center justify-center w-6 h-6 bg-black/50 rounded-full border border-gray-600"><SimpleMatchIcon className="w-4 h-4 text-gray-300"/></span>
+          <span>If the logo is inverted (compared to master) click on</span>
+          <span className="inline-flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 bg-purple-500/90 rounded-full"><InvertIcon className="w-3 h-3 sm:w-4 sm:h-4 text-white"/></span>
         </p>
-        <p className="text-sm text-gray-400 flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-500/90 rounded-full"><InvertIcon className="w-4 h-4 text-white"/></span>
-          = Inverted luminance (auto-detected or manual toggle)
+        <p className="text-sm sm:text-base lg:text-lg text-gray-300 flex flex-wrap items-center gap-1 sm:gap-2">
+          <span className="font-bold text-cyan-400">3.</span> 
+          <span>If no perspective correction is needed click on</span>
+          <span className="inline-flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 bg-black/50 rounded-full border border-gray-600"><SimpleMatchIcon className="w-3 h-3 sm:w-4 sm:h-4 text-gray-300"/></span>
+          <span>to avoid false alignment</span>
         </p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
@@ -69,22 +73,12 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
                   <XIcon className="w-4 h-4" />
               </button>
 
-              {/* Hover overlay for filename - BELOW buttons */}
+              {/* Hover overlay for filename/action - BELOW buttons */}
               <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-0">
-                <p className="text-white text-xs text-center p-1 truncate">{file.file.name}</p>
+                <p className="text-white text-sm font-bold text-center p-1 truncate">
+                  {!masterFileId ? "Select as Master" : file.file.name}
+                </p>
               </div>
-
-              {/* Invert button - ABOVE overlay */}
-              {!isMaster && (
-                <button
-                  onClick={(e) => handleInversionClick(e, file.id)}
-                  className={`absolute top-1 left-1 p-1.5 rounded-full transition-colors duration-200 z-20
-                    ${isInverted ? 'bg-purple-500/90 text-white' : 'bg-black/50 text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-purple-500/70 hover:text-white'}`}
-                  title={isInverted ? "Inverted (Click to disable)" : "Normal (Click to invert)"}
-                >
-                  <InvertIcon className="w-4 h-4" />
-                </button>
-              )}
 
               {isMaster && (
                 <>
@@ -95,16 +89,29 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
                 </>
               )}
 
-              {/* Simple Match button - ABOVE overlay */}
+              {/* Action Buttons - Bottom Right */}
               {!isMaster && (
-                <button
-                  onClick={(e) => handleSimpleMatchClick(e, file.id)}
-                  className={`absolute bottom-1 right-1 p-1.5 rounded-full transition-colors duration-200 z-20
-                    ${needsSimpleMatch ? 'bg-green-500 text-white' : 'bg-black/50 text-gray-300 hover:bg-gray-700 hover:text-white'}`}
-                  title={needsSimpleMatch ? "Simple Match Active (Click for Perspective)" : "Perspective Active (Click for Simple Match)"}
-                >
-                  <SimpleMatchIcon className="w-5 h-5" />
-                </button>
+                <div className="absolute bottom-1 right-1 flex gap-1 z-20">
+                  {/* Invert Button - Always visible */}
+                  <button
+                    onClick={(e) => handleInversionClick(e, file.id)}
+                    className={`p-1.5 rounded-full transition-colors duration-200
+                      ${isInverted ? 'bg-purple-500/90 text-white' : 'bg-black/50 text-gray-300 hover:bg-purple-500/70 hover:text-white'}`}
+                    title={isInverted ? "Inverted (Click to disable)" : "Normal (Click to invert)"}
+                  >
+                    <InvertIcon className="w-4 h-4" />
+                  </button>
+
+                  {/* Simple Match button */}
+                  <button
+                    onClick={(e) => handleSimpleMatchClick(e, file.id)}
+                    className={`p-1.5 rounded-full transition-colors duration-200
+                      ${needsSimpleMatch ? 'bg-green-500 text-white' : 'bg-black/50 text-gray-300 hover:bg-gray-700 hover:text-white'}`}
+                    title={needsSimpleMatch ? "Simple Match Active (Click for Perspective)" : "Perspective Active (Click for Simple Match)"}
+                  >
+                    <SimpleMatchIcon className="w-5 h-5" />
+                  </button>
+                </div>
               )}
             </div>
           );

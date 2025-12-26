@@ -18,7 +18,7 @@ import { capturePayPalOrder } from './services/paymentService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
 import { calculateCreditsNeeded } from './types/credits';
-import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon } from './components/Icons';
+import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon, TrashIcon, ChevronRightIcon } from './components/Icons';
 import { Spinner } from './components/Spinner';
 import { DebugToggle } from './components/DebugToggle';
 import { StabilitySlider } from './components/StabilitySlider';
@@ -68,6 +68,8 @@ export default function App() {
   const [masterFileId, setMasterFileId] = useState<string | null>(null);
   const [previousFileStates, setPreviousFileStates] = useState<Map<string, { needsPerspectiveCorrection: boolean; needsSimpleMatch: boolean }>>(new Map());
   const [processedFiles, setProcessedFiles] = useState<ProcessedFile[]>([]);
+  const [savedProcessedFiles, setSavedProcessedFiles] = useState<ProcessedFile[]>([]);
+  const [isEditingSelection, setIsEditingSelection] = useState(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [retryingEdgeFillIds, setRetryingEdgeFillIds] = useState<Set<string>>(new Set());
@@ -85,7 +87,13 @@ export default function App() {
   // NEW LOGIC per User Request: Medium (2) = I + E (No P), High (3) = I + P + E
   const isPerspectiveCorrectionEnabled = stabilityLevel >= 3; // Perspective active only at level 3
   const isEnsembleCorrectionEnabled = stabilityLevel >= 2; // Ensemble active from level 2
-  const [processingMode, setProcessingMode] = useState<'draft' | 'fast' | 'pro'>('fast');
+  const [processingMode, setProcessingMode] = useState<'draft' | 'fast' | 'pro'>(() => {
+    const saved = localStorage.getItem('logolapser_processingMode');
+    if (saved === 'draft' || saved === 'fast' || saved === 'pro') {
+      return saved;
+    }
+    return 'draft'; // Default to draft
+  });
   const isAiEdgeFillEnabled = processingMode === 'pro';
   const isDraftMode = processingMode === 'draft';
   const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
@@ -112,6 +120,7 @@ export default function App() {
     isOpen: boolean;
     creditsNeeded: number;
   }>({ isOpen: false, creditsNeeded: 0 });
+  const [startOverModalOpen, setStartOverModalOpen] = useState(false);
   
   const totalEstimatedTimeSecRef = useRef(0);
   
@@ -140,6 +149,9 @@ export default function App() {
             console.error("Failed to parse stored prompt snippets:", e);
         }
     }
+    
+    // Save processingMode to localStorage when it changes
+    // (handled by separate useEffect below)
     
     // Auth listener
     const unsubscribe = onAuthChange(async (authUser) => {
@@ -195,6 +207,11 @@ export default function App() {
     
     return () => unsubscribe();
   }, []);
+
+  // Persist processingMode to localStorage
+  useEffect(() => {
+    localStorage.setItem('logolapser_processingMode', processingMode);
+  }, [processingMode]);
 
   const handleAddSnippet = (newSnippet: string) => {
     const trimmedSnippet = newSnippet.trim();
@@ -313,12 +330,21 @@ export default function App() {
   }, []);
 
   const handleBackToSelection = useCallback(() => {
+    // Save current results so user can go back
+    setSavedProcessedFiles(processedFiles);
+    setIsEditingSelection(true);
     setProcessedFiles([]);
     setProcessingStatus('');
     setError(null);
-  }, []);
+  }, [processedFiles]);
 
-  const handleStartAllOver = useCallback(() => {
+  const handleBackToResults = useCallback(() => {
+    // Restore saved results
+    setProcessedFiles(savedProcessedFiles);
+    setIsEditingSelection(false);
+  }, [savedProcessedFiles]);
+
+  const confirmStartAllOver = useCallback(() => {
     setUploadedFiles([]);
     setMasterFileId(null);
     setProcessedFiles([]);
@@ -328,6 +354,11 @@ export default function App() {
     setIsProcessing(false);
     setIsExporting(false);
     setPreviousFileStates(new Map());
+    setStartOverModalOpen(false);
+  }, []);
+
+  const handleStartAllOver = useCallback(() => {
+    setStartOverModalOpen(true);
   }, []);
 
   const handleDeleteUploadedFile = useCallback((idToDelete: string) => {
@@ -1214,6 +1245,58 @@ export default function App() {
         userId={user?.uid}
       />
 
+      {/* Start All Over Confirmation Modal */}
+      {startOverModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setStartOverModalOpen(false)}
+        >
+          <div 
+            className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-700 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-white mb-4">Start All Over?</h3>
+            <p className="text-gray-300 mb-6">
+              Are you sure you want to start over? <span className="text-red-400 font-bold">All current progress and files will be lost.</span>
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              {processedFiles.length > 0 && (
+                 <button
+                    onClick={handleExport}
+                    disabled={isExporting}
+                    className="w-full py-3 px-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                 >
+                    {isExporting ? (
+                        <>
+                            <Spinner className="w-5 h-5" />
+                            <span>Exporting...</span>
+                        </>
+                    ) : (
+                        <span>Download Results First</span>
+                    )}
+                 </button>
+              )}
+              
+              <div className="flex gap-3 mt-2">
+                <button
+                    onClick={() => setStartOverModalOpen(false)}
+                    className="flex-1 py-3 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold transition-colors"
+                >
+                    Cancel
+                </button>
+                <button
+                    onClick={confirmStartAllOver}
+                    className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-colors"
+                >
+                    Confirm & Reset
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="w-full max-w-[1800px] mx-auto flex-grow flex flex-col items-center justify-center h-full">
         {error && (
           <div className="w-full bg-red-800/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative mb-6" role="alert">
@@ -1265,9 +1348,9 @@ export default function App() {
                 <FileDropzone onDrop={handleFilesDrop} />
               </div>
             ) : (
-                <div className="w-full flex flex-col lg:flex-row gap-8 items-start h-full">
+                <div className="w-full flex flex-col lg:flex-row gap-8 lg:items-start h-full">
                     {/* LEFT SIDEBAR - Settings (Always Visible) */}
-                    <div className="w-full lg:w-[420px] flex-shrink-0 flex flex-col gap-6 p-6 bg-gray-800/40 rounded-xl border border-gray-700/50 sticky top-6 backdrop-blur-sm">
+                    <div className="w-full lg:w-[420px] flex-shrink-0 flex flex-col gap-6 p-6 bg-gray-800/40 rounded-xl border border-gray-700/50 lg:sticky lg:top-6 backdrop-blur-sm lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
                         <h2 className="text-xl font-bold text-white mb-2">Settings</h2>
                         
                         {/* Settings Sections */}
@@ -1316,15 +1399,48 @@ export default function App() {
                         
                         {/* Main Action Button */}
                         {processedFiles.length > 0 ? (
-                           <button
-                              onClick={handleStartAllOver}
-                              className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-red-600 rounded-xl shadow-lg hover:shadow-red-500/20 hover:bg-red-700 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
-                           >
-                              Start All Over
-                              <span className="block text-xs font-normal opacity-80 mt-1">
-                                 Reset to upload new files
-                              </span>
-                           </button>
+                           <>
+                              {/* Regenerate - check auth for Fast/Pro mode */}
+                              {!user && !isDraftMode ? (
+                                 <button
+                                    onClick={() => setAuthModalOpen(true)}
+                                    className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg hover:shadow-purple-500/20 hover:from-purple-500 hover:to-pink-500 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+                                 >
+                                    Login & Regenerate
+                                    <span className="block text-xs font-normal opacity-80 mt-1">
+                                       Login required for {processingMode === 'pro' ? 'Pro' : 'Fast'} mode
+                                    </span>
+                                 </button>
+                              ) : (
+                                 <button
+                                    onClick={handleProcessImages}
+                                    className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl shadow-lg hover:shadow-cyan-500/20 hover:from-cyan-500 hover:to-blue-500 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
+                                 >
+                                    Regenerate
+                                    <span className="block text-xs font-normal opacity-80 mt-1">
+                                       Re-process with current settings
+                                       {user && estimatedCreditsNeeded > 0 && (
+                                          <span className="ml-2 text-yellow-300">• ⚡{estimatedCreditsNeeded} credits</span>
+                                       )}
+                                       {isDraftMode && (
+                                          <span className="ml-2 text-yellow-300">• FREE</span>
+                                       )}
+                                    </span>
+                                 </button>
+                              )}
+                              <button
+                                 onClick={handleStartAllOver}
+                                 className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-red-600 rounded-xl shadow-lg hover:shadow-red-500/20 hover:bg-red-700 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] flex flex-col items-center"
+                              >
+                                 <span className="flex items-center gap-2">
+                                    <TrashIcon className="w-5 h-5" />
+                                    Start All Over
+                                 </span>
+                                 <span className="block text-xs font-normal opacity-80 mt-1">
+                                    Reset to upload new files
+                                 </span>
+                              </button>
+                           </>
                         ) : !user && !isDraftMode ? (
                            // Not logged in and not in Draft mode - show Sign in button
                            <button
@@ -1332,7 +1448,7 @@ export default function App() {
                               disabled={!masterFileId}
                               className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl shadow-lg hover:shadow-purple-500/20 hover:from-purple-500 hover:to-pink-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
                            >
-                              Sign in & Generate
+                              {isEditingSelection ? 'Login & Regenerate' : 'Login & Generate'}
                               <span className="block text-xs font-normal opacity-80 mt-1">
                                  Login required for {processingMode === 'pro' ? 'Pro' : 'Fast'} mode
                               </span>
@@ -1343,7 +1459,7 @@ export default function App() {
                               disabled={!masterFileId}
                               className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl shadow-lg hover:shadow-cyan-500/20 hover:from-cyan-500 hover:to-blue-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
                            >
-                              Align & Generate
+                              {isEditingSelection ? 'Align & Regenerate' : 'Align & Generate'}
                               <span className="block text-xs font-normal opacity-80 mt-1">
                                  Est. time: ~{formattedEstimatedTime}
                                  {user && estimatedCreditsNeeded > 0 && (
@@ -1380,14 +1496,29 @@ export default function App() {
                                 isEdgeFillEnabled={isAiEdgeFillEnabled}
                             />
                         ) : (
-                            <ImageGrid 
-                                files={uploadedFiles} 
-                                masterFileId={masterFileId} 
-                                onSelectMaster={handleSelectMaster} 
-                                onToggleSimpleMatch={handleToggleSimpleMatch}
-                                onToggleLuminanceInversion={handleToggleLuminanceInversion}
-                                onDelete={handleDeleteUploadedFile}
-                            />
+                            <>
+                                {/* Back to Results button when editing selection */}
+                                {isEditingSelection && savedProcessedFiles.length > 0 && (
+                                    <div className="flex justify-end mb-4">
+                                        <button
+                                            onClick={handleBackToResults}
+                                            className="px-4 py-2 text-sm font-semibold text-white bg-gray-600 rounded-md hover:bg-gray-500 transition-colors flex items-center gap-2"
+                                            title="Go back to results"
+                                        >
+                                            <span>Back to Results</span>
+                                            <ChevronRightIcon className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                )}
+                                <ImageGrid 
+                                    files={uploadedFiles} 
+                                    masterFileId={masterFileId} 
+                                    onSelectMaster={handleSelectMaster} 
+                                    onToggleSimpleMatch={handleToggleSimpleMatch}
+                                    onToggleLuminanceInversion={handleToggleLuminanceInversion}
+                                    onDelete={handleDeleteUploadedFile}
+                                />
+                            </>
                         )}
                     </div>
                 </div>

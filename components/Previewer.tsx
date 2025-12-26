@@ -18,6 +18,7 @@ interface PreviewerProps {
   fixingImageId: string | null;
   onExport: () => void;
   isExporting: boolean;
+  onRegenerate: () => void;
   isProcessing?: boolean;
   processingStatus?: string;
   processingProgress?: number;
@@ -41,6 +42,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
     fixingImageId,
     onExport,
     isExporting,
+    onRegenerate,
     isProcessing,
     processingStatus,
     processingProgress,
@@ -180,7 +182,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
                 title="Go back to change master or other settings"
             >
                 <ChevronLeftIcon className="w-5 h-5" />
-                <span>Change Selection</span>
+                <span>Change Selection & Settings</span>
             </button>
         </div>
         <div className="flex items-center gap-4 flex-wrap justify-end">
@@ -221,14 +223,23 @@ export const Previewer: React.FC<PreviewerProps> = ({
       </div>
 
        {viewMode === 'single' && currentFile && (
-        <div className="w-full flex flex-col items-center mb-4">
-            <div className="relative w-full max-w-2xl group">
-                 <div className="grid grid-cols-2 gap-4">
+        <div className="w-full flex flex-col items-center mb-4 px-4">
+            <div className="relative w-full max-w-2xl group flex items-center gap-2">
+                 {/* Left navigation button */}
+                {!isPlaying && files.length > 1 && (
+                    <button onClick={handlePrev} className="flex-shrink-0 bg-black/40 text-white p-2 rounded-full opacity-40 hover:opacity-100 transition-opacity focus:opacity-100" aria-label="Previous image">
+                        <ChevronLeftIcon className="w-6 h-6" />
+                    </button>
+                )}
+                {/* Spacer when playing or single file */}
+                {(isPlaying || files.length <= 1) && <div className="w-10 flex-shrink-0" />}
+                
+                <div className="flex-1 min-w-0 grid grid-cols-2 gap-2 sm:gap-4">
                     {/* Original Image */}
                     <div className="flex flex-col items-center">
                         <h3 className="text-lg font-semibold text-gray-400 mb-2">Original</h3>
                         <div 
-                            className="w-full bg-gray-900 rounded-lg overflow-hidden"
+                            className="relative w-full bg-gray-900 rounded-lg overflow-hidden"
                             style={getAspectRatioStyle(aspectRatio)}
                         >
                             {originalPreviewUrl ? (
@@ -240,6 +251,11 @@ export const Previewer: React.FC<PreviewerProps> = ({
                             ) : (
                                 <div className="w-full h-full flex items-center justify-center text-gray-500 p-4 text-center">
                                     <span>Original preview not available.</span>
+                                </div>
+                            )}
+                            {isCurrentFileMaster && (
+                                <div className="absolute bottom-0 left-0 right-0 bg-cyan-400 text-gray-900 text-center text-xs font-bold py-0.5">
+                                    MASTER
                                 </div>
                             )}
                         </div>
@@ -266,24 +282,20 @@ export const Previewer: React.FC<PreviewerProps> = ({
                         </div>
                     </div>
                 </div>
-                {!isPlaying && (
-                  <>
-                    <button onClick={handlePrev} className="absolute -left-12 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Previous image">
-                        <ChevronLeftIcon className="w-6 h-6" />
-                    </button>
-                    <button onClick={handleNext} className="absolute -right-12 top-1/2 -translate-y-1/2 bg-black/40 text-white p-2 rounded-full opacity-20 group-hover:opacity-100 transition-opacity focus:opacity-100 disabled:opacity-20" aria-label="Next image">
+                
+                {/* Right navigation button */}
+                {!isPlaying && files.length > 1 && (
+                    <button onClick={handleNext} className="flex-shrink-0 bg-black/40 text-white p-2 rounded-full opacity-40 hover:opacity-100 transition-opacity focus:opacity-100" aria-label="Next image">
                         <ChevronRightIcon className="w-6 h-6" />
                     </button>
-                  </>
                 )}
+                {/* Spacer when playing or single file */}
+                {(isPlaying || files.length <= 1) && <div className="w-10 flex-shrink-0" />}
             </div>
             <div className="text-center mt-3 p-2 rounded-md bg-gray-800 w-full max-w-2xl">
                 <p className="text-sm text-gray-300 truncate font-mono" title={currentFile.originalName}>
                     {`[${currentIndex + 1}/${files.length}] `}{currentFile.originalName}
                 </p>
-                 {isCurrentFileMaster && (
-                     <p className="text-xs font-bold text-cyan-400 mt-1">MASTER IMAGE</p>
-                 )}
             </div>
         </div>
       )}
