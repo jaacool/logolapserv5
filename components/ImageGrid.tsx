@@ -29,7 +29,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ files, masterFileId, onSel
   }
   
   return (
-    <div className="w-full">
+    <div className="w-full px-2 sm:px-4">
       <div className="mb-6 space-y-2">
         <p className="text-sm sm:text-base lg:text-lg text-gray-300 flex flex-wrap items-center gap-1 sm:gap-2">
           <span className="font-bold text-cyan-400">1.</span> 
