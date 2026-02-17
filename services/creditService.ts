@@ -34,22 +34,9 @@ export const getCredits = async (): Promise<number> => {
       return 0;
     }
 
-    // If no record exists, create one with welcome bonus
+    // If no record exists, return 0 (welcome bonus is given at signup, not here)
     if (!data) {
-      const { data: newData, error: insertError } = await supabase.rpc('add_credits', {
-        p_user_id: user.uid,
-        p_amount: WELCOME_BONUS_CREDITS,
-        p_type: 'bonus',
-        p_description: 'Welcome bonus',
-      });
-
-      if (insertError) {
-        console.error('Error adding welcome bonus:', insertError);
-        return 0;
-      }
-
-      console.log(`Welcome bonus of ${WELCOME_BONUS_CREDITS} credits added for user ${user.uid}`);
-      return newData || WELCOME_BONUS_CREDITS;
+      return 0;
     }
 
     return data.credits || 0;
@@ -138,5 +125,46 @@ export const addCredits = async (amount: number): Promise<number> => {
   } catch (err) {
     console.error('Error adding credits:', err);
     return 0;
+  }
+};
+
+/**
+ * Grant welcome bonus to new users (called once at signup)
+ */
+export const grantWelcomeBonus = async (userId: string): Promise<boolean> => {
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  try {
+    // Check if user already has a credit record
+    const { data: existingRecord } = await supabase
+      .from('user_credits')
+      .select('credits')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    // Only grant welcome bonus if no record exists
+    if (!existingRecord) {
+      const { error } = await supabase.rpc('add_credits', {
+        p_user_id: userId,
+        p_amount: WELCOME_BONUS_CREDITS,
+        p_type: 'bonus',
+        p_description: 'Welcome bonus',
+      });
+
+      if (error) {
+        console.error('Error granting welcome bonus:', error);
+        return false;
+      }
+
+      console.log(`✨ Welcome bonus of ${WELCOME_BONUS_CREDITS} credits granted to user ${userId}`);
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('Error granting welcome bonus:', err);
+    return false;
   }
 };

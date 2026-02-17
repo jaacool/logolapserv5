@@ -13,7 +13,7 @@ import { processImageLocally, refineWithGoldenTemplate, detectPerspectiveDistort
 import { generateVariation } from './services/geminiService';
 import { processWithNanobanana } from './services/nanobananaService';
 import { onAuthChange } from './services/authService';
-import { getCredits, deductCredits, hasEnoughCredits } from './services/creditService';
+import { getCredits, deductCredits, hasEnoughCredits, grantWelcomeBonus } from './services/creditService';
 import { capturePayPalOrder } from './services/paymentService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
@@ -157,6 +157,9 @@ export default function App() {
     const unsubscribe = onAuthChange(async (authUser) => {
       setUser(authUser);
       if (authUser) {
+        // Grant welcome bonus for new users (only runs once per user)
+        await grantWelcomeBonus(authUser.uid);
+        // Then fetch credits
         const userCredits = await getCredits();
         setCredits(userCredits);
       } else {
