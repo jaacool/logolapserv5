@@ -65,6 +65,7 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
         {/* Pro Option */}
         <button
           onClick={() => onChange('pro')}
+          title="May output unexpected results"
           className={`relative flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 ${
             value === 'pro'
               ? 'border-purple-500 bg-purple-500/10 text-purple-400'
@@ -74,8 +75,11 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
           <SparklesIcon className="w-6 h-6 mb-2" />
           <span className="font-bold">Pro</span>
           <span className="text-xs opacity-70 mt-1">AI Edge Fill</span>
+          <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+            EXPERIMENTAL
+          </div>
           {value === 'pro' && (
-            <div className="absolute -top-2 -right-2 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+            <div className="absolute -top-2 -left-2 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
               +{estimatedTimeFormatted}
             </div>
           )}

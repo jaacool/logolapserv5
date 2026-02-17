@@ -1471,6 +1471,22 @@ export default function App() {
                               </span>
                            </button>
                         )}
+                        
+                        {/* Start All Over Button - always visible when files are uploaded */}
+                        {uploadedFiles.length > 0 && processedFiles.length === 0 && (
+                           <button
+                              onClick={handleStartAllOver}
+                              className="w-full mt-2 py-4 px-6 text-lg font-bold text-white bg-red-600 rounded-xl shadow-lg hover:shadow-red-500/20 hover:bg-red-700 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] flex flex-col items-center"
+                           >
+                              <span className="flex items-center gap-2">
+                                 <TrashIcon className="w-5 h-5" />
+                                 Start All Over
+                              </span>
+                              <span className="block text-xs font-normal opacity-80 mt-1">
+                                 Reset to upload new files
+                              </span>
+                           </button>
+                        )}
                     </div>
 
                     {/* RIGHT SIDE - Content */}
