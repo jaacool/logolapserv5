@@ -1,74 +1,139 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 
 export const HeroAnimation = () => {
+  const [frameIndex, setFrameIndex] = useState(0);
+
+  // Generate 60 random frames for 10 seconds at 6fps
+  const frames = useMemo(() => {
+    return Array.from({length: 60}).map(() => ({
+      logo: {
+        x: Math.random() * 200 - 100,
+        y: Math.random() * 400 - 200,
+        scaleX: 0.6 + Math.random() * 0.8,
+        scaleY: 0.6 + Math.random() * 0.8,
+        skewX: Math.random() * 60 - 30,
+        skewY: Math.random() * 60 - 30,
+        rotate: Math.random() * 80 - 40,
+      },
+      frame: {
+        x: Math.random() * 150 - 75,
+        y: Math.random() * 150 - 75,
+        scaleX: 0.7 + Math.random() * 0.5,
+        scaleY: 0.7 + Math.random() * 0.5,
+        skewX: Math.random() * 30 - 15,
+        skewY: Math.random() * 30 - 15,
+        rotate: Math.random() * 40 - 20,
+      }
+    }));
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrameIndex(i => (i + 1) % 60);
+    }, 1000 / 6); // 6 fps
+    return () => clearInterval(interval);
+  }, []);
+
+  const currentFrame = frames[frameIndex];
+
+  // Helper to convert transform object to SVG transform string
+  const getTransform = (t: any) => {
+    return `translate(${t.x}, ${t.y}) rotate(${t.rotate}) scale(${t.scaleX}, ${t.scaleY}) skewX(${t.skewX}) skewY(${t.skewY})`;
+  };
+
+  const transition = { duration: 4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } as const;
+
   return (
-    <div className="relative w-full max-w-md mx-auto aspect-square flex items-center justify-center">
-      {/* Background Target Image representation */}
-      <motion.div
-        className="absolute w-64 h-64 border-2 border-gray-700 bg-gray-800 rounded-xl overflow-hidden shadow-2xl"
-        initial={{ rotateX: 0, rotateY: 0, scale: 0.8 }}
-        animate={{ 
-          rotateX: 45, 
-          rotateY: 15, 
-          scale: 1,
-          z: -50
-        }}
-        transition={{ 
-          duration: 3, 
-          repeat: Infinity, 
-          repeatType: "reverse", 
-          ease: "easeInOut" 
-        }}
-        style={{ perspective: 1000, transformStyle: "preserve-3d" }}
-      >
-        {/* Grid pattern to simulate a surface */}
-        <div className="w-full h-full opacity-20" style={{
-          backgroundImage: 'linear-gradient(45deg, #4B5563 25%, transparent 25%, transparent 75%, #4B5563 75%, #4B5563), linear-gradient(45deg, #4B5563 25%, transparent 25%, transparent 75%, #4B5563 75%, #4B5563)',
-          backgroundSize: '20px 20px',
-          backgroundPosition: '0 0, 10px 10px'
-        }}></div>
-      </motion.div>
+    <div className="relative w-full max-w-[320px] mx-auto aspect-[9/16] rounded-3xl overflow-hidden shadow-2xl border-4 border-gray-800 bg-gray-950">
+      <svg viewBox="0 0 540 960" className="w-full h-full">
+        <defs>
+          {/* Background Grid Pattern */}
+          <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+            <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#374151" strokeWidth="2" opacity="0.5"/>
+            <circle cx="0" cy="0" r="3" fill="#4B5563" />
+          </pattern>
 
-      {/* Floating Logo representation */}
-      <motion.div
-        className="absolute w-32 h-32 bg-indigo-500 rounded-lg flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.5)] border border-indigo-300"
-        initial={{ y: -100, opacity: 0, rotateZ: -10 }}
-        animate={{ 
-          y: [null, 0, 0], 
-          opacity: [null, 1, 1],
-          rotateZ: [null, 0, 0],
-          rotateX: [null, 45, 45],
-          rotateY: [null, 15, 15]
-        }}
-        transition={{ 
-          duration: 3, 
-          repeat: Infinity, 
-          repeatType: "reverse", 
-          ease: "easeInOut",
-          times: [0, 0.5, 1]
-        }}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16 text-white">
-          <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-1.72 6.97a.75.75 0 10-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 101.06 1.06L12 13.06l1.72 1.72a.75.75 0 101.06-1.06L13.06 12l1.72-1.72a.75.75 0 10-1.06-1.06L12 10.94l-1.72-1.72z" clipRule="evenodd" />
-        </svg>
-      </motion.div>
+          {/* Mask for the wipe effect */}
+          <mask id="wipe-mask">
+            {/* Black hides the masked content by default */}
+            <rect x="-1000" y="-1000" width="3000" height="3000" fill="black" />
+            <motion.g
+              initial={{ x: -200, y: 1200 }}
+              animate={{ x: 700, y: -200 }}
+              transition={transition}
+            >
+              {/* White reveals the masked content. Since line is rotated 30deg, top-right is negative Y */}
+              <rect x="-2000" y="-3000" width="4000" height="3000" fill="white" transform="rotate(30)" />
+            </motion.g>
+          </mask>
+        </defs>
 
-      {/* Scanning effect line */}
-      <motion.div
-        className="absolute w-72 h-1 bg-green-400 shadow-[0_0_15px_rgba(74,222,128,0.8)]"
-        initial={{ y: -150, opacity: 0 }}
-        animate={{ 
-          y: [-150, 150], 
-          opacity: [0, 1, 1, 0] 
-        }}
-        transition={{ 
-          duration: 1.5, 
-          repeat: Infinity, 
-          ease: "linear",
-          delay: 1.5
-        }}
-      />
+        {/* --- ANIMATION 2: AFTER (Background layer) --- */}
+        <g id="after-layer">
+          {/* Distorted Frame (representing the un-aligned target image borders) */}
+          <g transform={`translate(270, 480) ${getTransform(currentFrame.frame)}`}>
+            <rect x="-270" y="-480" width="540" height="960" fill="url(#grid)" />
+            <rect x="-270" y="-480" width="540" height="960" fill="none" stroke="#6366f1" strokeWidth="12" strokeDasharray="30 20" />
+            
+            {/* Faux image elements jumping around to show distortion */}
+            <circle cx="-100" cy="-200" r="80" fill="#4B5563" opacity="0.3" />
+            <rect x="50" y="100" width="150" height="200" fill="#4B5563" opacity="0.3" rx="20" />
+            <path d="M -200 300 Q -100 200 0 300 T 200 300" fill="none" stroke="#4B5563" strokeWidth="10" opacity="0.3" />
+          </g>
+
+          {/* Perfect Logo (Aligned, stationary) */}
+          <g transform="translate(270, 480)">
+            <g transform="scale(4)" fill="#6366f1">
+               {/* Hexagon Logo shape */}
+               <polygon points="0,-25 22,-12 22,12 0,25 -22,12 -22,-12" />
+               <text x="0" y="45" fill="white" fontSize="16" fontWeight="900" textAnchor="middle" letterSpacing="2" style={{ textShadow: "0px 2px 4px rgba(0,0,0,0.5)" }}>LOGO</text>
+            </g>
+          </g>
+          
+          <text x="40" y="900" fill="#a5b4fc" fontSize="48" fontWeight="bold" letterSpacing="4" style={{ textShadow: "0px 4px 10px rgba(0,0,0,0.8)" }}>AFTER</text>
+        </g>
+
+        {/* --- ANIMATION 1: BEFORE (Foreground layer, masked) --- */}
+        <g id="before-layer" mask="url(#wipe-mask)">
+          {/* Static Frame */}
+          <rect x="0" y="0" width="540" height="960" fill="#111827" />
+          <rect x="0" y="0" width="540" height="960" fill="url(#grid)" />
+          <rect x="0" y="0" width="540" height="960" fill="none" stroke="#ef4444" strokeWidth="12" />
+          
+          {/* Faux image elements (static) */}
+          <circle cx="170" cy="280" r="80" fill="#4B5563" opacity="0.3" />
+          <rect x="320" y="580" width="150" height="200" fill="#4B5563" opacity="0.3" rx="20" />
+          <path d="M 50 700 Q 150 600 250 700 T 450 700" fill="none" stroke="#4B5563" strokeWidth="10" opacity="0.3" />
+
+          {/* Distorted Logo jumping around at 6fps */}
+          <g transform={`translate(270, 480) ${getTransform(currentFrame.logo)}`}>
+            <g transform="scale(4)" fill="#ef4444">
+               <polygon points="0,-25 22,-12 22,12 0,25 -22,12 -22,-12" />
+               <text x="0" y="45" fill="white" fontSize="16" fontWeight="900" textAnchor="middle" letterSpacing="2" style={{ textShadow: "0px 2px 4px rgba(0,0,0,0.5)" }}>LOGO</text>
+            </g>
+          </g>
+
+          <text x="40" y="80" fill="#fca5a5" fontSize="48" fontWeight="bold" letterSpacing="4" style={{ textShadow: "0px 4px 10px rgba(0,0,0,0.8)" }}>BEFORE</text>
+        </g>
+
+        {/* --- WIPE LINE --- */}
+        <motion.g
+          initial={{ x: -200, y: 1200 }}
+          animate={{ x: 700, y: -200 }}
+          transition={transition}
+        >
+          {/* Main glowing separator line */}
+          <line x1="-1500" y1="0" x2="1500" y2="0" stroke="#10b981" strokeWidth="12" transform="rotate(30)" />
+          <line x1="-1500" y1="0" x2="1500" y2="0" stroke="#10b981" strokeWidth="30" opacity="0.3" transform="rotate(30)" />
+          
+          {/* Scanning arrows on the line */}
+          <g transform="rotate(30)">
+            <polygon points="-50,-20 0,0 -50,20 -40,0" fill="#10b981" />
+            <polygon points="50,-20 0,0 50,20 40,0" fill="#10b981" />
+          </g>
+        </motion.g>
+      </svg>
     </div>
   );
 };
