@@ -16,6 +16,7 @@ import { onAuthChange } from './services/authService';
 import { getCredits, deductCredits, hasEnoughCredits, grantWelcomeBonus } from './services/creditService';
 import { capturePayPalOrder } from './services/paymentService';
 import { fileToImageElement, dataUrlToImageElement } from './utils/fileUtils';
+import { LandingPage } from './components/LandingPage/LandingPage';
 import type { UploadedFile, ProcessedFile, AspectRatio } from './types';
 import { calculateCreditsNeeded } from './types/credits';
 import { JaaCoolMediaLogo, SquaresExcludeIcon, XIcon, TrashIcon, ChevronRightIcon } from './components/Icons';
@@ -72,6 +73,10 @@ export default function App() {
   const [isEditingSelection, setIsEditingSelection] = useState(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isLandingPage, setIsLandingPage] = useState<boolean>(() => {
+    // If user is already logged in or has visited before, skip landing page
+    return !localStorage.getItem('logolapser_visited');
+  });
   const [retryingEdgeFillIds, setRetryingEdgeFillIds] = useState<Set<string>>(new Set());
   const [processingStatus, setProcessingStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -1158,6 +1163,15 @@ export default function App() {
   }, [uploadedFiles, masterFileId, isAiEdgeFillEnabled, edgeFillResolution, isAiVariationsEnabled, numVariations, isDraftMode]);
 
   const formattedEstimatedTime = formatTime(totalEstimatedTime);
+
+  const handleStartApp = () => {
+    localStorage.setItem('logolapser_visited', 'true');
+    setIsLandingPage(false);
+  };
+
+  if (isLandingPage) {
+    return <LandingPage onStart={handleStartApp} isLoggedIn={!!user} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4 sm:p-6 md:p-8">
