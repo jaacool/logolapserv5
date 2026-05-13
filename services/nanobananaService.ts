@@ -5,6 +5,26 @@ import { auth as firebaseAuth } from '../config/firebase';
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
 
+// Helper to convert any dataUrl to JPEG base64 (much smaller than PNG for photos)
+const toJpegBase64 = (dataUrl: string, quality = 0.85): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d')!;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            const jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(jpegDataUrl.split(',')[1]);
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+};
+
 export const processWithNanobanana = async (
     imageUrl: string, 
     resolution: number = 1024,
@@ -25,15 +45,10 @@ export const processWithNanobanana = async (
         height = resolution;
     }
 
-    // Cap at 512px max to stay within Supabase Edge Function 50s timeout
-    const maxDim = 512;
-    const scale = Math.min(1, maxDim / Math.max(width, height));
-    const cappedWidth = Math.round(width * scale);
-    const cappedHeight = Math.round(height * scale);
-
     // Resize to specified resolution with correct aspect ratio
-    const resizedImageUrl = await resizeImage(imageUrl, cappedWidth, cappedHeight);
-    const imageBase64 = dataUrlToBase64(resizedImageUrl);
+    const resizedImageUrl = await resizeImage(imageUrl, width, height);
+    // Convert to JPEG at 85% quality to reduce payload size (PNG is 3-5x larger)
+    const imageBase64 = await toJpegBase64(resizedImageUrl, 0.85);
 
     // Prompt designed for seamless edge fill while preserving logo structure
     const prompt = `TASK: Create a complete ${aspectRatio} aspect ratio image by filling ALL empty/black/cropped areas with seamless background without altering the rest of the image.

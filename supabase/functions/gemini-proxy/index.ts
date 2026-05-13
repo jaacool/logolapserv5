@@ -8,8 +8,9 @@ const corsHeaders = {
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
 interface GeminiRequest {
-  action: 'edge-fill' | 'generate-variation';
+  action: 'edge-fill' | 'generate-variation' | 'list-models';
   imageBase64: string;
+  mimeType?: string;
   prompt: string;
   resolution?: number;
   additionalImages?: { base64: string; mimeType: string }[];
@@ -41,6 +42,17 @@ serve(async (req) => {
     const body: GeminiRequest = await req.json();
     const { action, imageBase64, prompt, additionalImages } = body;
 
+    // Debug: list available models
+    if (action === 'list-models') {
+      const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+      const listData = await listResp.json();
+      const imageModels = (listData.models || []).filter((m: any) =>
+        m.supportedGenerationMethods?.includes('generateContent') &&
+        (m.name.includes('image') || m.name.includes('flash') || m.name.includes('imagen'))
+      ).map((m: any) => ({ name: m.name, displayName: m.displayName }));
+      return new Response(JSON.stringify({ imageModels }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     if (!action || !imageBase64 || !prompt) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields: action, imageBase64, prompt' }),
@@ -63,10 +75,10 @@ serve(async (req) => {
       }
     }
 
-    // Add the main image
+    // Add the main image (sent as JPEG from frontend to reduce payload size)
     parts.push({
       inline_data: {
-        mime_type: 'image/png',
+        mime_type: body.mimeType || 'image/jpeg',
         data: imageBase64,
       },
     });
