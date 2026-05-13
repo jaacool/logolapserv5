@@ -61,11 +61,11 @@ OUTPUT: A complete ${aspectRatio} image where the logo remains unchanged and all
         console.log('[Nanobanana] 📡 Sending request to Supabase proxy...');
         
         // Get the current user's token from Firebase to authenticate the proxy request
-        let headers = {};
-        if (firebaseAuth?.currentUser) {
-            const token = await firebaseAuth.currentUser.getIdToken();
-            headers = { 'x-firebase-auth': token };
+        if (!firebaseAuth?.currentUser) {
+            throw new Error('Login required to use AI Edge Fill');
         }
+        const token = await firebaseAuth.currentUser.getIdToken();
+        const headers = { 'x-firebase-auth': token };
 
         const { data, error } = await supabase.functions.invoke('gemini-proxy', {
             headers,

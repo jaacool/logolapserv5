@@ -36,11 +36,11 @@ export const generateVariation = async (
         console.log('[Gemini] 📡 Sending request to proxy...');
         
         // Get the current user's token from Firebase to authenticate the proxy request
-        let headers = {};
-        if (firebaseAuth?.currentUser) {
-            const token = await firebaseAuth.currentUser.getIdToken();
-            headers = { 'x-firebase-auth': token };
+        if (!firebaseAuth?.currentUser) {
+            throw new Error('Login required to use AI Variation');
         }
+        const token = await firebaseAuth.currentUser.getIdToken();
+        const headers = { 'x-firebase-auth': token };
         
         const { data, error } = await supabase.functions.invoke('gemini-proxy', {
             headers,
