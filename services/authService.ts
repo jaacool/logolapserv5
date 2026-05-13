@@ -128,6 +128,8 @@ export const getAuthErrorMessage = (errorCode: string): string => {
       return 'Too many failed attempts. Please try again later.';
     case 'auth/popup-closed-by-user':
       return 'Sign-in popup was closed. Please try again.';
+    case 'auth/unauthorized-domain':
+      return 'This domain is not authorized for Firebase Authentication. Please add it to the "Authorized domains" list in the Firebase Console.';
     default:
       return 'An error occurred. Please try again.';
   }
