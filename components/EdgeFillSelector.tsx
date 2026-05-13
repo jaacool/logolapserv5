@@ -62,27 +62,18 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
           <span className="text-xs opacity-70 mt-1">Crop & Pad</span>
         </button>
 
-        {/* Pro Option */}
+        {/* Pro Option (Temporarily Disabled) */}
         <button
-          onClick={() => onChange('pro')}
-          title="May output unexpected results"
-          className={`relative flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 ${
-            value === 'pro'
-              ? 'border-purple-500 bg-purple-500/10 text-purple-400'
-              : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600 hover:bg-gray-800'
-          }`}
+          disabled
+          title="AI Edge Fill is temporarily undergoing maintenance"
+          className="relative flex flex-col items-center p-4 rounded-xl border-2 border-gray-800 bg-gray-900/50 text-gray-600 cursor-not-allowed"
         >
-          <SparklesIcon className="w-6 h-6 mb-2" />
+          <SparklesIcon className="w-6 h-6 mb-2 opacity-50" />
           <span className="font-bold">Pro</span>
-          <span className="text-xs opacity-70 mt-1">AI Edge Fill</span>
-          <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-            EXPERIMENTAL
+          <span className="text-xs opacity-50 mt-1 text-red-500/70 font-medium">Under Maintenance</span>
+          <div className="absolute -top-2 -right-2 bg-gray-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+            OFFLINE
           </div>
-          {value === 'pro' && (
-            <div className="absolute -top-2 -left-2 bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              +{estimatedTimeFormatted}
-            </div>
-          )}
         </button>
       </div>
 

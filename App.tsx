@@ -99,7 +99,14 @@ export default function App() {
     }
     return 'draft'; // Default to draft
   });
-  const isAiEdgeFillEnabled = processingMode === 'pro';
+  // Force processingMode to 'fast' if it was 'pro' (maintenance)
+  useEffect(() => {
+    if (processingMode === 'pro') {
+      setProcessingMode('fast');
+    }
+  }, [processingMode]);
+
+  const isAiEdgeFillEnabled = false; // Forced false during maintenance
   const isDraftMode = processingMode === 'draft';
   const [edgeFillResolution, setEdgeFillResolution] = useState<number>(1024);
   const [isAiVariationsEnabled, setIsAiVariationsEnabled] = useState(false);

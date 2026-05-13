@@ -349,7 +349,7 @@ export const Previewer: React.FC<PreviewerProps> = ({
                         </button>
                     </>
                 )}
-                {onRetryEdgeFill && (
+                {onRetryEdgeFill && isEdgeFillEnabled && (
                     <button
                         onClick={() => onRetryEdgeFill(file.id)}
                         disabled={!!fixingImageId || retryingEdgeFillIds.has(file.id)}
