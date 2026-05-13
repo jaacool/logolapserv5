@@ -1,6 +1,6 @@
 import { resizeImage } from '../utils/fileUtils';
 import { supabase } from './supabaseClient';
-import { getCurrentUser } from './authService';
+import { auth as firebaseAuth } from '../config/firebase';
 
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
@@ -10,12 +10,6 @@ export const processWithNanobanana = async (
     resolution: number = 1024,
     aspectRatio: '9:16' | '1:1' | '16:9' = '9:16'
 ): Promise<string> => {
-    const user = getCurrentUser();
-    if (!user) {
-        throw new Error("Authentication required to use AI features.");
-    }
-
-    const token = await user.getIdToken();
     console.log('[Nanobanana] 🚀 Starting processWithNanobanana via proxy');
     
     // Calculate dimensions based on aspect ratio
@@ -65,16 +59,22 @@ OUTPUT: A complete ${aspectRatio} image where the logo remains unchanged and all
 
     try {
         console.log('[Nanobanana] 📡 Sending request to Supabase proxy...');
+        
+        // Get the current user's token from Firebase to authenticate the proxy request
+        let headers = {};
+        if (firebaseAuth?.currentUser) {
+            const token = await firebaseAuth.currentUser.getIdToken();
+            headers = { 'Authorization': `Bearer ${token}` };
+        }
+
         const { data, error } = await supabase.functions.invoke('gemini-proxy', {
+            headers,
             body: {
                 action: 'edge-fill',
                 imageBase64: imageBase64,
                 prompt: prompt,
                 resolution: resolution,
                 aspectRatio: aspectRatio
-            },
-            headers: {
-                'X-Firebase-Auth': token
             }
         });
 

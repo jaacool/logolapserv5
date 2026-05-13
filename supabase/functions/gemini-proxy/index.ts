@@ -22,6 +22,15 @@ serve(async (req) => {
   }
 
   try {
+    // SECURITY: Require authentication
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (!GEMINI_API_KEY) {
       return new Response(
         JSON.stringify({ error: 'GEMINI_API_KEY not configured on server' }),
