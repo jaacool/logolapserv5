@@ -25,8 +25,14 @@ export const processWithNanobanana = async (
         height = resolution;
     }
 
+    // Cap at 512px max to stay within Supabase Edge Function 50s timeout
+    const maxDim = 512;
+    const scale = Math.min(1, maxDim / Math.max(width, height));
+    const cappedWidth = Math.round(width * scale);
+    const cappedHeight = Math.round(height * scale);
+
     // Resize to specified resolution with correct aspect ratio
-    const resizedImageUrl = await resizeImage(imageUrl, width, height);
+    const resizedImageUrl = await resizeImage(imageUrl, cappedWidth, cappedHeight);
     const imageBase64 = dataUrlToBase64(resizedImageUrl);
 
     // Prompt designed for seamless edge fill while preserving logo structure
