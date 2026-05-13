@@ -1,6 +1,7 @@
 import type { ProcessedFile } from '../types';
 import { resizeImage } from '../utils/fileUtils';
 import { supabase } from './supabaseClient';
+import { getCurrentUser } from './authService';
 
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
@@ -10,6 +11,13 @@ export const generateVariation = async (
     prompt: string,
     contextImageUrl?: string
 ): Promise<string> => {
+    const user = getCurrentUser();
+    if (!user) {
+        throw new Error("Authentication required to use AI features.");
+    }
+
+    const token = await user.getIdToken();
+
     // Resize images to avoid payload limits (max 1024px)
     const resizedImages = await Promise.all(
         referenceImages.map(async (img) => ({
@@ -40,6 +48,9 @@ export const generateVariation = async (
                 prompt: prompt,
                 additionalImages: additionalImages.length > 0 ? additionalImages : undefined,
                 contextImageBase64: contextImageBase64
+            },
+            headers: {
+                'X-Firebase-Auth': token
             }
         });
 

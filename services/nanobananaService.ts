@@ -1,5 +1,6 @@
 import { resizeImage } from '../utils/fileUtils';
 import { supabase } from './supabaseClient';
+import { getCurrentUser } from './authService';
 
 // Helper to convert data URL to base64
 const dataUrlToBase64 = (dataUrl: string): string => dataUrl.split(',')[1];
@@ -9,6 +10,12 @@ export const processWithNanobanana = async (
     resolution: number = 1024,
     aspectRatio: '9:16' | '1:1' | '16:9' = '9:16'
 ): Promise<string> => {
+    const user = getCurrentUser();
+    if (!user) {
+        throw new Error("Authentication required to use AI features.");
+    }
+
+    const token = await user.getIdToken();
     console.log('[Nanobanana] 🚀 Starting processWithNanobanana via proxy');
     
     // Calculate dimensions based on aspect ratio
@@ -65,6 +72,9 @@ OUTPUT: A complete ${aspectRatio} image where the logo remains unchanged and all
                 prompt: prompt,
                 resolution: resolution,
                 aspectRatio: aspectRatio
+            },
+            headers: {
+                'X-Firebase-Auth': token
             }
         });
 
