@@ -72,7 +72,7 @@ serve(async (req) => {
     });
 
     // Call Gemini API directly via REST
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GEMINI_API_KEY}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${GEMINI_API_KEY}`;
 
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
