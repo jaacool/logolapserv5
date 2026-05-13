@@ -39,7 +39,7 @@ export const generateVariation = async (
         let headers = {};
         if (firebaseAuth?.currentUser) {
             const token = await firebaseAuth.currentUser.getIdToken();
-            headers = { 'Authorization': `Bearer ${token}` };
+            headers = { 'x-firebase-auth': token };
         }
         
         const { data, error } = await supabase.functions.invoke('gemini-proxy', {

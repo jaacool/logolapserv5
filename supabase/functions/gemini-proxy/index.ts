@@ -22,11 +22,11 @@ serve(async (req) => {
   }
 
   try {
-    // SECURITY: Require authentication
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    // SECURITY: Require authentication (Firebase Token)
+    const firebaseToken = req.headers.get('x-firebase-auth');
+    if (!firebaseToken) {
       return new Response(
-        JSON.stringify({ error: 'Authentication required' }),
+        JSON.stringify({ error: 'Authentication required (Firebase Token missing)' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
