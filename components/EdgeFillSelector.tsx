@@ -28,7 +28,7 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
         Processing Mode
       </label>
       
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {/* Draft Option */}
         <button
           onClick={() => onChange('draft')}
@@ -60,20 +60,6 @@ export const EdgeFillSelector: React.FC<EdgeFillSelectorProps> = ({ value, onCha
           <LightningBoltIcon className="w-6 h-6 mb-2" />
           <span className="font-bold">Fast</span>
           <span className="text-xs opacity-70 mt-1">Crop & Pad</span>
-        </button>
-
-        {/* Pro Option (Temporarily Disabled) */}
-        <button
-          disabled
-          title="AI Edge Fill is temporarily undergoing maintenance"
-          className="relative flex flex-col items-center p-4 rounded-xl border-2 border-gray-800 bg-gray-900/50 text-gray-600 cursor-not-allowed"
-        >
-          <SparklesIcon className="w-6 h-6 mb-2 opacity-50" />
-          <span className="font-bold">Pro</span>
-          <span className="text-xs opacity-50 mt-1 text-red-500/70 font-medium">Under Maintenance</span>
-          <div className="absolute -top-2 -right-2 bg-gray-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-            OFFLINE
-          </div>
         </button>
       </div>
 
